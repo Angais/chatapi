@@ -33,33 +33,25 @@ export function Header() {
       transition={{ duration: 0.3 }}
       className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
     >
-      <div className="container flex h-14 items-center justify-between px-4">
-        {/* Lado izquierdo - Nuevo chat + Logo */}
+      <div className="w-full flex h-14 items-center justify-between px-4">
+        {/* Lado izquierdo - Nombre + Nuevo chat */}
         <div className="flex items-center space-x-4">
+          <h1 className="text-lg font-semibold">Chatapi</h1>
+          
           <Button
             variant="ghost"
             size="icon"
           >
             <Plus className="h-4 w-4" />
           </Button>
-          
-          <div className="flex items-center space-x-2">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">C</span>
-            </div>
-            <h1 className="text-lg font-semibold">ChatAPI</h1>
-          </div>
         </div>
-
-        {/* Centro - vacío para centrar el contenido */}
-        <div className="flex-1"></div>
 
         {/* Lado derecho - Acciones */}
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
-          className="flex items-center space-x-2"
+          className="flex items-center space-x-1"
         >
           <Button
             variant="ghost"

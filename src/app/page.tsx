@@ -125,6 +125,205 @@ console.timeEnd('Iterative');
     content: 'Great, now I understand the difference. Could you show me an example of usage with `async/await`?',
     isUser: true,
     timestamp: '10:35 AM'
+  },
+  {
+    id: '8',
+    content: `Here's a comprehensive example of an async factorial calculator with error handling:
+
+\`\`\`javascript
+// Async factorial calculator with validation and delays
+class AsyncFactorialCalculator {
+  constructor() {
+    this.cache = new Map();
+    this.isCalculating = false;
+  }
+
+  // Simulate API delay
+  async delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // Validate input
+  validateInput(n) {
+    if (typeof n !== 'number' || !Number.isInteger(n)) {
+      throw new Error('Input must be a non-negative integer');
+    }
+    if (n < 0) {
+      throw new Error('Factorial is not defined for negative numbers');
+    }
+    if (n > 170) {
+      throw new Error('Number too large - JavaScript cannot handle factorials > 170!');
+    }
+  }
+
+  // Async factorial with progress tracking
+  async calculateFactorial(n, onProgress = null) {
+    this.validateInput(n);
+    
+    // Check cache first
+    if (this.cache.has(n)) {
+      console.log(\`Cache hit for factorial(\${n})\`);
+      return this.cache.get(n);
+    }
+
+    this.isCalculating = true;
+    let result = 1;
+    
+    try {
+      console.log(\`Starting calculation of factorial(\${n})\`);
+      
+      for (let i = 1; i <= n; i++) {
+        result *= i;
+        
+        // Report progress every 10 iterations
+        if (i % 10 === 0 && onProgress) {
+          const progress = (i / n) * 100;
+          onProgress({ current: i, total: n, progress: progress.toFixed(1) });
+          
+          // Small delay to simulate intensive computation
+          await this.delay(1);
+        }
+      }
+      
+      // Cache the result
+      this.cache.set(n, result);
+      console.log(\`Factorial(\${n}) = \${result}\`);
+      
+      return result;
+    } catch (error) {
+      console.error('Error calculating factorial:', error);
+      throw error;
+    } finally {
+      this.isCalculating = false;
+    }
+  }
+
+  // Batch calculate multiple factorials
+  async calculateBatch(numbers) {
+    const results = [];
+    
+    for (const num of numbers) {
+      try {
+        const result = await this.calculateFactorial(num, (progress) => {
+          console.log(\`Progress for \${num}: \${progress.progress}%\`);
+        });
+        results.push({ number: num, result, success: true });
+      } catch (error) {
+        results.push({ number: num, error: error.message, success: false });
+      }
+    }
+    
+    return results;
+  }
+
+  // Get calculation status
+  getStatus() {
+    return {
+      isCalculating: this.isCalculating,
+      cacheSize: this.cache.size,
+      cachedValues: Array.from(this.cache.keys()).sort((a, b) => a - b)
+    };
+  }
+
+  // Clear cache
+  clearCache() {
+    this.cache.clear();
+    console.log('Cache cleared');
+  }
+}
+
+// Usage examples
+async function demonstrateAsyncFactorial() {
+  const calculator = new AsyncFactorialCalculator();
+  
+  try {
+    // Single calculation with progress
+    console.log('=== Single Calculation ===');
+    const result = await calculator.calculateFactorial(20, (progress) => {
+      console.log(\`Progress: \${progress.current}/\${progress.total} (\${progress.progress}%)\`);
+    });
+    console.log(\`Result: \${result}\`);
+    
+    // Batch calculation
+    console.log('\\n=== Batch Calculation ===');
+    const batchResults = await calculator.calculateBatch([5, 10, 15, 25]);
+    console.table(batchResults);
+    
+    // Status check
+    console.log('\\n=== Calculator Status ===');
+    console.log(calculator.getStatus());
+    
+  } catch (error) {
+    console.error('Demonstration failed:', error);
+  }
+}
+
+// Advanced usage with Promise.all for parallel calculations
+async function parallelFactorialCalculation() {
+  const calculator = new AsyncFactorialCalculator();
+  const numbers = [5, 8, 12, 15, 18];
+  
+  console.log('Starting parallel calculations...');
+  
+  const promises = numbers.map(async (num) => {
+    const startTime = Date.now();
+    try {
+      const result = await calculator.calculateFactorial(num);
+      const duration = Date.now() - startTime;
+      return { num, result, duration, success: true };
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      return { num, error: error.message, duration, success: false };
+    }
+  });
+  
+  const results = await Promise.all(promises);
+  
+  console.log('Parallel calculation results:');
+  results.forEach(({ num, result, error, duration, success }) =>results.forEach(({ num, result, error, duration, success }) results.forEach(({ num, result, error, duration, success }) results.forEach(({ num, result, error, duration, success }) results.forEach(({ num, result, error, duration, success }) results.forEach(({ num, result, error, duration, success }) results.forEach(({ num, result, error, duration, success }) results.forEach(({ num, result, error, duration, success }) results.forEach(({ num, result, error, duration, success }) results.forEach(({ num, result, error, duration, success }) results.forEach(({ num, result, error, duration, success }) results.forEach(({ num, result, error, duration, success }) results.forEach(({ num, result, error, duration, success }) results.forEach(({ num, result, error, duration, success })  {
+    if (success) {
+      console.log(\`factorial(\${num}) = \${result} (took \${duration}ms)\`);
+    } else {
+      console.error(\`factorial(\${num}) failed: \${error} (took \${duration}ms)\`);
+    }
+  });
+  
+  return results;
+}
+
+// Error handling examples
+async function errorHandlingExamples() {
+  const calculator = new AsyncFactorialCalculator();
+  
+  const testCases = [
+    { input: -5, description: 'Negative number' },
+    { input: 3.14, description: 'Decimal number' },
+    { input: '10', description: 'String input' },
+    { input: 200, description: 'Too large number' },
+    { input: 10, description: 'Valid input' }
+  ];
+  
+  for (const testCase of testCases) {
+    try {
+      console.log(\`Testing: \${testCase.description} (input: \${testCase.input})\`);
+      const result = await calculator.calculateFactorial(testCase.input);
+      console.log(\`✅ Success: \${result}\`);
+    } catch (error) {
+      console.log(\`❌ Error: \${error.message}\`);
+    }
+    console.log('---');
+  }
+}
+
+// Run demonstrations
+demonstrateAsyncFactorial();
+parallelFactorialCalculation();
+errorHandlingExamples();
+\`\`\`
+
+This example shows advanced async patterns with factorial calculations including caching, progress tracking, error handling, and parallel execution!`,
+    isUser: false,
+    timestamp: '10:36 AM'
   }
 ]
 

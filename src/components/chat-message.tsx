@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Highlight, themes } from 'prism-react-renderer'
 import { useTheme } from '@/hooks/use-theme'
 import ReactMarkdown from 'react-markdown'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 interface ChatMessageProps {
   content: string
@@ -17,24 +17,53 @@ interface ChatMessageProps {
 function CodeBlock({ children, className }: { children: string; className?: string }) {
   const { actualTheme } = useTheme()
   const [isClient, setIsClient] = useState(false)
+  const [showCopyButton, setShowCopyButton] = useState(false)
   const language = className?.replace('language-', '') || 'text'
   
   useEffect(() => {
     setIsClient(true)
   }, [])
 
+  const handleCodeBlockClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowCopyButton(true)
+  }
+
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setShowCopyButton(false)
+    }
+
+    if (showCopyButton) {
+      document.addEventListener('click', handleClickOutside)
+      document.addEventListener('touchstart', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('click', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+    }
+  }, [showCopyButton])
+
   // Render a simple code block on server and during hydration
   if (!isClient) {
     return (
-      <div className="relative group">
-        <pre className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 overflow-x-auto text-sm font-mono">
-          <code>{children.trim()}</code>
-        </pre>
+      <div className="relative group/codeblock cursor-pointer" onClick={handleCodeBlockClick}>
+        <div className="max-h-[600px] overflow-auto rounded-lg custom-scrollbar">
+          <pre className="p-6 text-sm font-mono whitespace-pre bg-muted rounded-lg w-max min-w-full">
+            <code>{children.trim()}</code>
+          </pre>
+        </div>
         <Button
           variant="ghost"
           size="sm"
-          className="absolute top-2 right-2 h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={() => navigator.clipboard.writeText(children)}
+          className={`absolute top-2 right-2 h-8 w-8 p-0 transition-opacity duration-200 ${
+            showCopyButton ? 'opacity-100' : 'opacity-0 group-hover/codeblock:opacity-100'
+          }`}
+          onClick={(e) => {
+            e.stopPropagation()
+            navigator.clipboard.writeText(children)
+          }}
         >
           <Copy className="h-3 w-3" />
         </Button>
@@ -43,8 +72,8 @@ function CodeBlock({ children, className }: { children: string; className?: stri
   }
   
   return (
-    <div className="relative group">
-      <div className="rounded-lg overflow-hidden">
+    <div className="relative group/codeblock cursor-pointer" onClick={handleCodeBlockClick}>
+      <div className="max-h-[600px] overflow-auto rounded-lg custom-scrollbar">
         <Highlight 
           theme={actualTheme === 'dark' ? themes.vsDark : themes.vsLight} 
           code={children.trim()} 
@@ -52,7 +81,7 @@ function CodeBlock({ children, className }: { children: string; className?: stri
         >
           {({ className, style, tokens, getLineProps, getTokenProps }) => (
             <pre 
-              className={`${className} p-4 overflow-x-auto text-sm`} 
+              className={`${className} p-6 text-sm whitespace-pre w-max min-w-full rounded-lg`} 
               style={style}
             >
               {tokens.map((line, i) => (
@@ -69,8 +98,13 @@ function CodeBlock({ children, className }: { children: string; className?: stri
       <Button
         variant="ghost"
         size="sm"
-        className="absolute top-2 right-2 h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-        onClick={() => navigator.clipboard.writeText(children)}
+        className={`absolute top-2 right-2 h-8 w-8 p-0 transition-opacity duration-200 ${
+          showCopyButton ? 'opacity-100' : 'opacity-0 group-hover/codeblock:opacity-100'
+        }`}
+        onClick={(e) => {
+          e.stopPropagation()
+          navigator.clipboard.writeText(children)
+        }}
       >
         <Copy className="h-3 w-3" />
       </Button>
@@ -79,6 +113,31 @@ function CodeBlock({ children, className }: { children: string; className?: stri
 }
 
 export function ChatMessage({ content, isUser, timestamp }: ChatMessageProps) {
+  const [showCopyButton, setShowCopyButton] = useState(false)
+
+  const handleMessageClick = (e: React.MouseEvent) => {
+    if (isUser) {
+      e.stopPropagation()
+      setShowCopyButton(true)
+    }
+  }
+
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setShowCopyButton(false)
+    }
+
+    if (showCopyButton) {
+      document.addEventListener('click', handleClickOutside)
+      document.addEventListener('touchstart', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('click', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+    }
+  }, [showCopyButton])
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -86,21 +145,22 @@ export function ChatMessage({ content, isUser, timestamp }: ChatMessageProps) {
       transition={{ duration: 0.3 }}
       className="group w-full py-4"
     >
-      {/* Centered container with maximum width */}
-      <div className="container max-w-4xl mx-auto px-4">
+      {/* Responsive container matching input width */}
+      <div className="w-full max-w-4xl mx-auto px-4">
         <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-          <div className={`max-w-[75%] ${isUser ? 'flex flex-col items-end' : 'flex flex-col items-start'}`}>
+          <div className={`w-full ${isUser ? 'max-w-[85%] sm:max-w-[75%] flex flex-col items-end' : 'flex flex-col items-start'}`}>
             {/* Message */}
             <div
-              className={`relative px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+              onClick={handleMessageClick}
+              className={`relative px-4 py-3 rounded-2xl text-base leading-relaxed ${
                 isUser
-                  ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-br-md'
-                  : 'bg-transparent text-foreground'
-              }`}
+                  ? 'w-fit max-w-full bg-card text-card-foreground rounded-br-md cursor-pointer'
+                  : 'w-full bg-transparent text-foreground'
+              } break-words`}
             >
               <div className="space-y-3">
                 {isUser ? (
-                  <span className="whitespace-pre-wrap">{content}</span>
+                  <span className="whitespace-pre-wrap break-words">{content}</span>
                 ) : (
                   <ReactMarkdown
                     components={{
@@ -112,7 +172,7 @@ export function ChatMessage({ content, isUser, timestamp }: ChatMessageProps) {
                           </CodeBlock>
                         ) : (
                           <code 
-                            className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono"
+                            className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-all"
                             {...props}
                           >
                             {children}
@@ -125,7 +185,7 @@ export function ChatMessage({ content, isUser, timestamp }: ChatMessageProps) {
                       h3: ({ children }) => <h3 className="text-base font-bold mb-2">{children}</h3>,
                       ul: ({ children }) => <ul className="list-disc list-inside space-y-1 ml-4">{children}</ul>,
                       ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 ml-4">{children}</ol>,
-                      li: ({ children }) => <li className="text-sm">{children}</li>,
+                      li: ({ children }) => <li className="text-base">{children}</li>,
                       p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
                       strong: ({ children }) => <strong className="font-bold">{children}</strong>,
                       em: ({ children }) => <em className="italic">{children}</em>,
@@ -140,38 +200,37 @@ export function ChatMessage({ content, isUser, timestamp }: ChatMessageProps) {
               </div>
             </div>
 
-            {/* Timestamp */}
-            {timestamp && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                className={`text-xs text-muted-foreground mt-1 px-2 ${
-                  isUser ? 'text-right' : 'text-left'
-                }`}
-              >
-                {timestamp}
-              </motion.div>
-            )}
-
             {/* Actions for AI messages */}
             {!isUser && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
+              <div className="flex items-center gap-1 mt-2 animate-in fade-in duration-200">
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2 text-xs"
                   onClick={() => navigator.clipboard.writeText(content)}
                 >
-                  <Copy className="w-3 h-3 mr-1" />
-                  Copy
+                  <Copy className="w-3 h-3" />
                 </Button>
-              </motion.div>
+              </div>
+            )}
+
+            {/* Actions for user messages */}
+            {isUser && (
+              <div className={`flex items-center gap-1 mt-2 transition-opacity duration-300 ease-out ${
+                showCopyButton ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              }`}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(content)
+                  }}
+                >
+                  <Copy className="w-3 h-3" />
+                </Button>
+              </div>
             )}
           </div>
         </div>
