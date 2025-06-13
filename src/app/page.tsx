@@ -1,103 +1,182 @@
-import Image from "next/image";
+'use client'
 
-export default function Home() {
+import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Header } from '@/components/header'
+import { ChatMessage } from '@/components/chat-message'
+import { ChatInput } from '@/components/chat-input'
+import { TypingIndicator } from '@/components/typing-indicator'
+import { EmptyState } from '@/components/empty-state'
+
+// Sample data to showcase the UI
+const sampleMessages = [
+  {
+    id: '1',
+    content: 'Hello! How does ChatAPI work?',
+    isUser: true,
+    timestamp: '10:28 AM'
+  },
+  {
+    id: '2',
+    content: 'Hello! ChatAPI is an artificial intelligence assistant designed to help you with a wide variety of tasks. I can help you with:\n\n• Programming and development\n• Analysis and problem solving\n• Creative writing\n• Explanations of complex concepts\n• And much more\n\nWhat would you like me to help you with today?',
+    isUser: false,
+    timestamp: '10:28 AM'
+  },
+  {
+    id: '3',
+    content: 'Could you help me create a JavaScript function that calculates the factorial of a number?',
+    isUser: true,
+    timestamp: '10:30 AM'
+  },
+  {
+    id: '4',
+    content: `Of course! I'll help you create a function to calculate the factorial. Here are several options:
+
+## Recursive Version
+\`\`\`javascript
+function factorial(n) {
+  if (n <= 1) return 1;
+  return n * factorial(n - 1);
+}
+\`\`\`
+
+## Iterative Version (more efficient)
+\`\`\`javascript
+function factorial(n) {
+  let result = 1;
+  for (let i = 2; i <= n; i++) {
+    result *= i;
+  }
+  return result;
+}
+\`\`\`
+
+## With error validation
+\`\`\`javascript
+function factorial(n) {
+  if (n < 0) throw new Error('Factorial of negative numbers does not exist');
+  if (n === 0 || n === 1) return 1;
+  
+  let result = 1;
+  for (let i = 2; i <= n; i++) {
+    result *= i;
+  }
+  return result;
+}
+\`\`\`
+
+## Usage example:
+\`\`\`javascript
+console.log(factorial(5)); // 120
+console.log(factorial(0)); // 1
+console.log(factorial(7)); // 5040
+\`\`\`
+
+The iterative version is more efficient for large numbers since it avoids the risk of stack overflow. Would you like me to explain any specific concept?`,
+    isUser: false,
+    timestamp: '10:31 AM'
+  },
+  {
+    id: '5',
+    content: 'Perfect, thank you very much. What would be the performance difference between the recursive and iterative versions?',
+    isUser: true,
+    timestamp: '10:32 AM'
+  },
+  {
+    id: '6',
+    content: `Excellent question. There are several important performance differences:
+
+## **Time Complexity**
+Both have **O(n)** - linear time, but recursive has additional overhead.
+
+## **Space Complexity**
+- **Iterative:** O(1) - constant space
+- **Recursive:** O(n) - uses call stack
+
+## **Practical Performance**
+
+### Recursive:
+- Each call uses memory on the stack  
+- Can cause \`stack overflow\` with large numbers
+- Slower due to function call overhead
+
+### Iterative:  
+- Uses constant memory
+- No risk of stack overflow
+- Faster and more efficient
+
+## **Performance test:**
+\`\`\`javascript
+console.time('Recursive');
+factorial_recursive(1000);
+console.timeEnd('Recursive');
+
+console.time('Iterative'); 
+factorial_iterative(1000);
+console.timeEnd('Iterative');
+\`\`\`
+
+**Recommendation:** Use the iterative version for production applications, especially with large numbers.`,
+    isUser: false,
+    timestamp: '10:33 AM'
+  },
+  {
+    id: '7',
+    content: 'Great, now I understand the difference. Could you show me an example of usage with `async/await`?',
+    isUser: true,
+    timestamp: '10:35 AM'
+  }
+]
+
+export default function ChatPage() {
+  const [messages] = useState(sampleMessages)
+  const [isTyping] = useState(true) // Change to false to hide the indicator
+  // To show the home screen instead of messages, change to true:
+  const [showEmpty] = useState(false) 
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="flex flex-col min-h-screen bg-background">
+      <Header />
+      
+      <main className="flex-1 flex flex-col">
+        {showEmpty ? (
+          /* 🏠 HOME SCREEN - To activate, change showEmpty to true */
+          <EmptyState />
+        ) : (
+          /* 💬 CHAT VIEW - Conversation messages */
+          <motion.div 
+            className="flex-1 overflow-auto"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
+            <AnimatePresence mode="wait">
+              {messages.map((message) => (
+                <ChatMessage
+                  key={message.id}
+                  content={message.content}
+                  isUser={message.isUser}
+                  timestamp={message.timestamp}
+                />
+              ))}
+              
+              {isTyping && (
+                <motion.div
+                  key="typing"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <TypingIndicator />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+        
+        <ChatInput />
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
-  );
+  )
 }
