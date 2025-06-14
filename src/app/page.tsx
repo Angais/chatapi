@@ -38,7 +38,7 @@ export default function ChatPage() {
       const scrollHeight = container.scrollHeight
       
       // Aumentar un poco más el espacio para mejor visibilidad
-      const spaceToAdd = Math.min(viewportHeight * 0.7, 600) // Aumentado a 60% y máximo 600px
+      const spaceToAdd = Math.min(viewportHeight * 0.7, 500) // Aumentado a 60% y máximo 600px
       setDynamicPadding(prevPadding => prevPadding + spaceToAdd)
     }
   }
@@ -46,13 +46,17 @@ export default function ChatPage() {
   useEffect(() => {
     // Cuando se agrega un nuevo mensaje
     const messagesLengthChanged = messages.length !== prevMessagesLengthRef.current
+    const previousLength = prevMessagesLengthRef.current
     prevMessagesLengthRef.current = messages.length
     
     if (messagesLengthChanged && messages.length > 0) {
-      const lastMessage = messages[messages.length - 1]
+      // Buscar si hay un mensaje de usuario recién añadido
+      const recentUserMessage = messages.find((msg, index) => 
+        msg.isUser && index >= previousLength
+      )
       
-      // SOLO hacer scroll automático para mensajes del USUARIO
-      if (lastMessage.isUser) {
+      // SOLO hacer scroll automático para mensajes del USUARIO recién añadidos
+      if (recentUserMessage) {
         // Añadir espacio para que quede arriba
         addSpaceForNewMessage()
         
@@ -73,6 +77,17 @@ export default function ChatPage() {
       setDynamicPadding(0)
     }
   }, [messages.length])
+  
+  // Resetear el padding cuando empieza un streaming nuevo (no durante)
+  useEffect(() => {
+    if (isStreaming && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1]
+      // Solo resetear si el último mensaje es del usuario (nueva conversación)
+      if (lastMessage.isUser) {
+        setDynamicPadding(0)
+      }
+    }
+  }, [isStreaming, messages])
 
   // Fetch models on page load
   useEffect(() => {
@@ -104,7 +119,8 @@ export default function ChatPage() {
             /* 💬 CHAT VIEW - Conversation messages */
             <motion.div 
               ref={chatContainerRef}
-              className="flex-1 overflow-auto"
+              className="flex-1 overflow-auto scrollbar-stable"
+              style={{ overflowAnchor: 'none' }}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3 }}
@@ -124,35 +140,47 @@ export default function ChatPage() {
                 </motion.div>
               )}
 
-              {/* Messages - removed AnimatePresence to prevent flickering */}
-              {messages.map((message) => (
-                <ChatMessage
-                  key={message.id}
-                  content={message.content}
-                  isUser={message.isUser}
-                  timestamp={message.timestamp}
-                  message={message}
-                />
-              ))}
+              {/* Messages - including streaming message */}
+              {messages.map((message, index) => {
+                // Si es el último mensaje y estamos streaming, usar el contenido streaming
+                const isLastMessage = index === messages.length - 1
+                const shouldShowAsStreaming = isLastMessage && !message.isUser && isStreaming && !!streamingMessage
+                
+                return (
+                  <ChatMessage
+                    key={message.id}
+                    content={shouldShowAsStreaming ? streamingMessage : message.content}
+                    isUser={message.isUser}
+                    timestamp={message.timestamp}
+                    message={message}
+                    isStreaming={shouldShowAsStreaming}
+                  />
+                )
+              })}
               
-              {/* Streaming message */}
-              {isStreaming && streamingMessage && (
-                <ChatMessage
-                  key="streaming"
-                  content={streamingMessage}
-                  isUser={false}
-                  isStreaming={true}
-                />
+              {/* Mensaje streaming temporal solo si no hay mensajes o el último es del usuario */}
+              {isStreaming && streamingMessage && (messages.length === 0 || messages[messages.length - 1]?.isUser) && (
+                <div key="streaming-wrapper" className="streaming-message-container">
+                  <ChatMessage
+                    key="streaming"
+                    content={streamingMessage}
+                    isUser={false}
+                    isStreaming={true}
+                  />
+                </div>
               )}
               
               {/* Typing indicator */}
-              {(isLoading || isStreaming) && <TypingIndicator />}
+              {(isLoading || isStreaming) && !streamingMessage && <TypingIndicator />}
               
               {/* Dynamic padding to create space for new messages */}
               <div 
                 ref={messagesEndRef} 
                 style={{ paddingBottom: `${dynamicPadding}px` }}
-                className="transition-all duration-300 ease-out"
+                className={cn(
+                  "transition-all ease-out",
+                  isStreaming ? "duration-0" : "duration-300"
+                )}
               />
             </motion.div>
           )}

@@ -234,14 +234,17 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                 </div>
               </div>
 
-              {/* Actions for AI messages */}
-              {!isUser && !isStreaming && (
-                <div className="flex items-center gap-1 mt-2 animate-in fade-in duration-200">
+              {/* Actions for AI messages - always reserve space */}
+              {!isUser && (
+                <div className={`flex items-center gap-1 mt-2 h-7 transition-all duration-200 ${
+                  isStreaming || !content.trim() ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                }`}>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-7 px-2 text-xs"
                     onClick={() => navigator.clipboard.writeText(content)}
+                    disabled={isStreaming || !content.trim()}
                   >
                     <Copy className="w-3 h-3" />
                   </Button>
@@ -252,6 +255,7 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                       className="h-7 px-2 text-xs"
                       onClick={() => setShowDevModal(true)}
                       title="Development information"
+                      disabled={isStreaming || !content.trim()}
                     >
                       <Info className="w-3 h-3" />
                     </Button>

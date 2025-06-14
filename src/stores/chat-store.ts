@@ -470,7 +470,23 @@ export const useChatStore = create<ChatState>()(
 
             // Add user message with debug info
             get().addMessage(content, true, userDebugInfo)
-            set({ isLoading: true })
+            
+            // Add placeholder AI message that will be updated during streaming
+            const placeholderMessage = {
+              id: Date.now().toString() + '_ai',
+              content: '',
+              isUser: false,
+              timestamp: new Date().toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+              }),
+            }
+            
+            set(state => ({
+              messages: [...state.messages, placeholderMessage],
+              isLoading: true
+            }))
 
             const startTime = Date.now()
 
@@ -583,9 +599,50 @@ export const useChatStore = create<ChatState>()(
                   }
                 } : undefined
 
-                // Add the complete AI message
-                get().addMessage(fullResponse, false, assistantDebugInfo)
-                set({ isStreaming: false, streamingMessage: '' })
+                // Si ya hay un mensaje streaming en progreso (último mensaje es IA), actualizarlo
+                // Si no, crear un nuevo mensaje
+                set(state => {
+                  const lastMessage = state.messages[state.messages.length - 1]
+                  const isUpdatingStreamingMessage = lastMessage && !lastMessage.isUser
+                  
+                  let updatedMessages
+                  if (isUpdatingStreamingMessage) {
+                    // Actualizar el último mensaje con el contenido completo
+                    updatedMessages = [
+                      ...state.messages.slice(0, -1),
+                      {
+                        ...lastMessage,
+                        content: fullResponse,
+                        debugInfo: assistantDebugInfo,
+                      }
+                    ]
+                  } else {
+                    // Crear nuevo mensaje
+                    const newMessage = {
+                      id: Date.now().toString(),
+                      content: fullResponse,
+                      isUser: false,
+                      timestamp: new Date().toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      }),
+                      debugInfo: assistantDebugInfo,
+                    }
+                    updatedMessages = [...state.messages, newMessage]
+                  }
+                  
+                  // Update chat history if needed
+                  if (state.currentChatId) {
+                    debouncedUpdateChatHistory(state.currentChatId, updatedMessages)
+                  }
+                  
+                  return {
+                    messages: updatedMessages,
+                    isStreaming: false,
+                    streamingMessage: ''
+                  }
+                })
               }
             } catch (error: any) {
               console.error('Chat error:', error)

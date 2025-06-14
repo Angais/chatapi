@@ -132,6 +132,17 @@ body {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Prevenir barras de scroll fantasma durante streaming */
+.scrollbar-stable {
+  scrollbar-gutter: stable;
+}
+
+/* Contenedor especial para mensaje streaming */
+.streaming-message-container {
+  /* Evitar cambios de layout cuando desaparece */
+  transition: opacity 0s;
+}
+
 /* Dialog animations */
 @keyframes animate-in {
   from {
