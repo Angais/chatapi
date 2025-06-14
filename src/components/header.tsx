@@ -2,16 +2,21 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Search, Plus, Settings, Sun, Moon, Monitor } from 'lucide-react'
+import { Search, Plus, Settings, Sun, Moon, Monitor, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTheme } from '@/hooks/use-theme'
 import { SettingsModal } from '@/components/settings-modal'
 import { useChatStore } from '@/stores/chat-store'
 
-export function Header() {
+interface HeaderProps {
+  onToggleSidebar: () => void
+  isSidebarOpen: boolean
+}
+
+export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
   const { theme, setTheme, actualTheme } = useTheme()
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const { clearMessages } = useChatStore()
+  const { createNewChat } = useChatStore()
 
   const getThemeIcon = () => {
     switch (theme) {
@@ -39,14 +44,23 @@ export function Header() {
       className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
     >
       <div className="w-full flex h-14 items-center justify-between px-4">
-        {/* Lado izquierdo - Nombre + Nuevo chat */}
-        <div className="flex items-center space-x-4">
+        {/* Lado izquierdo - Menu + Nombre + Nuevo chat */}
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleSidebar}
+            title="Toggle sidebar"
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+          
           <h1 className="text-lg font-semibold">Chatapi</h1>
           
           <Button
             variant="ghost"
             size="icon"
-            onClick={clearMessages}
+            onClick={createNewChat}
             title="New chat"
           >
             <Plus className="h-4 w-4" />
