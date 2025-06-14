@@ -1,17 +1,21 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Copy } from 'lucide-react'
+import { Copy, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Highlight, themes } from 'prism-react-renderer'
 import { useTheme } from '@/hooks/use-theme'
+import { useChatStore } from '@/stores/chat-store'
+import { DevInfoModal } from '@/components/dev-info-modal'
 import ReactMarkdown from 'react-markdown'
 import { useEffect, useState, useRef } from 'react'
+import { Message } from '@/stores/chat-store'
 
 interface ChatMessageProps {
   content: string
   isUser: boolean
   timestamp?: string
+  message?: Message
 }
 
 function CodeBlock({ children, className }: { children: string; className?: string }) {
@@ -112,8 +116,10 @@ function CodeBlock({ children, className }: { children: string; className?: stri
   )
 }
 
-export function ChatMessage({ content, isUser, timestamp }: ChatMessageProps) {
+export function ChatMessage({ content, isUser, timestamp, message }: ChatMessageProps) {
   const [showCopyButton, setShowCopyButton] = useState(false)
+  const [showDevModal, setShowDevModal] = useState(false)
+  const { devMode } = useChatStore()
 
   const handleMessageClick = (e: React.MouseEvent) => {
     if (isUser) {
@@ -139,102 +145,138 @@ export function ChatMessage({ content, isUser, timestamp }: ChatMessageProps) {
   }, [showCopyButton])
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-      className="group w-full py-4"
-    >
-      {/* Responsive container matching input width */}
-      <div className="w-full max-w-4xl mx-auto px-4">
-        <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-          <div className={`w-full ${isUser ? 'max-w-[85%] sm:max-w-[75%] flex flex-col items-end' : 'flex flex-col items-start'}`}>
-            {/* Message */}
-            <div
-              onClick={handleMessageClick}
-              className={`relative px-4 py-3 rounded-2xl text-base leading-relaxed ${
-                isUser
-                  ? 'w-fit max-w-full bg-card text-card-foreground rounded-br-md cursor-pointer'
-                  : 'w-full bg-transparent text-foreground'
-              } break-words`}
-            >
-              <div className="space-y-3">
-                {isUser ? (
-                  <span className="whitespace-pre-wrap break-words">{content}</span>
-                ) : (
-                  <ReactMarkdown
-                    components={{
-                      code: ({ node, className, children, ...props }) => {
-                        const match = /language-(\w+)/.exec(className || '')
-                        return match ? (
-                          <CodeBlock className={className}>
-                            {String(children).replace(/\n$/, '')}
-                          </CodeBlock>
-                        ) : (
-                          <code 
-                            className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-all"
-                            {...props}
-                          >
-                            {children}
-                          </code>
-                        )
-                      },
-                      pre: ({ children }) => <>{children}</>,
-                      h1: ({ children }) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
-                      h2: ({ children }) => <h2 className="text-lg font-bold mb-2">{children}</h2>,
-                      h3: ({ children }) => <h3 className="text-base font-bold mb-2">{children}</h3>,
-                      ul: ({ children }) => <ul className="list-disc list-inside space-y-1 ml-4">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 ml-4">{children}</ol>,
-                      li: ({ children }) => <li className="text-base">{children}</li>,
-                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                      strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-                      em: ({ children }) => <em className="italic">{children}</em>,
-                      blockquote: ({ children }) => (
-                        <blockquote className="border-l-4 border-muted pl-4 italic">{children}</blockquote>
-                      ),
+    <>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="group w-full py-4"
+      >
+        {/* Responsive container matching input width */}
+        <div className="w-full max-w-4xl mx-auto px-4">
+          <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <div className={`w-full ${isUser ? 'max-w-[85%] sm:max-w-[75%] flex flex-col items-end' : 'flex flex-col items-start'}`}>
+              {/* Message */}
+              <div
+                onClick={handleMessageClick}
+                className={`relative px-4 py-3 rounded-2xl text-base leading-relaxed ${
+                  isUser
+                    ? 'w-fit max-w-full bg-card text-card-foreground rounded-br-md cursor-pointer'
+                    : 'w-full bg-transparent text-foreground'
+                } break-words`}
+              >
+                <div className="space-y-3">
+                  {isUser ? (
+                    <span className="whitespace-pre-wrap break-words">{content}</span>
+                  ) : (
+                    <ReactMarkdown
+                      components={{
+                        code: ({ node, className, children, ...props }) => {
+                          const match = /language-(\w+)/.exec(className || '')
+                          return match ? (
+                            <CodeBlock className={className}>
+                              {String(children).replace(/\n$/, '')}
+                            </CodeBlock>
+                          ) : (
+                            <code 
+                              className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-all"
+                              {...props}
+                            >
+                              {children}
+                            </code>
+                          )
+                        },
+                        pre: ({ children }) => <>{children}</>,
+                        h1: ({ children }) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-lg font-bold mb-2">{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-base font-bold mb-2">{children}</h3>,
+                        ul: ({ children }) => <ul className="list-disc list-inside space-y-1 ml-4">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 ml-4">{children}</ol>,
+                        li: ({ children }) => <li className="text-base">{children}</li>,
+                        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                        strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                        em: ({ children }) => <em className="italic">{children}</em>,
+                        blockquote: ({ children }) => (
+                          <blockquote className="border-l-4 border-muted pl-4 italic">{children}</blockquote>
+                        ),
+                      }}
+                    >
+                      {content}
+                    </ReactMarkdown>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions for AI messages */}
+              {!isUser && (
+                <div className="flex items-center gap-1 mt-2 animate-in fade-in duration-200">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => navigator.clipboard.writeText(content)}
+                  >
+                    <Copy className="w-3 h-3" />
+                  </Button>
+                  {devMode && message && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setShowDevModal(true)}
+                      title="Development information"
+                    >
+                      <Info className="w-3 h-3" />
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Actions for user messages */}
+              {isUser && (
+                <div className={`flex items-center gap-1 mt-2 transition-opacity duration-300 ease-out ${
+                  showCopyButton ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                }`}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigator.clipboard.writeText(content)
                     }}
                   >
-                    {content}
-                  </ReactMarkdown>
-                )}
-              </div>
+                    <Copy className="w-3 h-3" />
+                  </Button>
+                  {devMode && message && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowDevModal(true)
+                      }}
+                      title="Development information"
+                    >
+                      <Info className="w-3 h-3" />
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
-
-            {/* Actions for AI messages */}
-            {!isUser && (
-              <div className="flex items-center gap-1 mt-2 animate-in fade-in duration-200">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={() => navigator.clipboard.writeText(content)}
-                >
-                  <Copy className="w-3 h-3" />
-                </Button>
-              </div>
-            )}
-
-            {/* Actions for user messages */}
-            {isUser && (
-              <div className={`flex items-center gap-1 mt-2 transition-opacity duration-300 ease-out ${
-                showCopyButton ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-              }`}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    navigator.clipboard.writeText(content)
-                  }}
-                >
-                  <Copy className="w-3 h-3" />
-                </Button>
-              </div>
-            )}
           </div>
         </div>
-      </div>
-    </motion.div>
+      </motion.div>
+      
+      {/* Dev Info Modal */}
+      {message && (
+        <DevInfoModal
+          message={message}
+          open={showDevModal}
+          onOpenChange={setShowDevModal}
+        />
+      )}
+    </>
   )
 } 

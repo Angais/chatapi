@@ -12,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -38,7 +39,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [showApiKey, setShowApiKey] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   
-  const { fetchModels } = useChatStore()
+  const { fetchModels, devMode, setDevMode } = useChatStore()
 
   useEffect(() => {
     // Load API key from localStorage when modal opens
@@ -81,9 +82,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>API Settings</DialogTitle>
+          <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            Manage your OpenAI API key here.
+            Manage your OpenAI API key and development options.
           </DialogDescription>
         </DialogHeader>
         
@@ -116,6 +117,22 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <p className="text-sm text-muted-foreground">
               Your API key is stored locally and never sent to our servers.
             </p>
+          </div>
+
+          <div className="grid gap-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="dev-mode">Developer Mode</Label>
+                <p className="text-sm text-muted-foreground">
+                  Show technical information about API requests and responses
+                </p>
+              </div>
+              <Switch
+                id="dev-mode"
+                checked={devMode}
+                onCheckedChange={setDevMode}
+              />
+            </div>
           </div>
         </div>
         

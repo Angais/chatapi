@@ -81,6 +81,7 @@ export default function ChatPage() {
                   content={message.content}
                   isUser={message.isUser}
                   timestamp={message.timestamp}
+                  message={message}
                 />
               ))}
               
