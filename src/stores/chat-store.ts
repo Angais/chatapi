@@ -14,6 +14,14 @@ interface Model {
   owned_by: string
 }
 
+// Presets de modelos predefinidos
+export const MODEL_PRESETS = [
+  { id: 'gpt-4o', displayName: 'GPT-4o' },
+  { id: 'o3', displayName: 'o3' },
+  { id: 'o3-pro', displayName: 'o3-pro' },
+  { id: 'o4-mini', displayName: 'o4-mini' },
+]
+
 export interface Chat {
   id: string
   title: string
@@ -54,6 +62,10 @@ interface ChatState {
   deleteChat: (chatId: string) => void
   updateChatTitle: (chatId: string, title: string) => void
   setSelectedModel: (model: string) => void
+  
+  // Model filtering helpers
+  getAvailablePresets: () => Array<{ id: string; displayName: string }>
+  getOtherModels: () => Model[]
 }
 
 // Helper function to generate chat title from first message
@@ -349,7 +361,22 @@ export const useChatStore = create<ChatState>()(
               ]
             })
           }
-        }
+                 },
+
+         getAvailablePresets: () => {
+           const { models } = get()
+           // Solo devuelve los presets que están disponibles en la API
+           return MODEL_PRESETS.filter(preset => 
+             models.some(model => model.id === preset.id)
+           )
+         },
+
+         getOtherModels: () => {
+           const { models } = get()
+           const presetIds = MODEL_PRESETS.map(preset => preset.id)
+           // Devuelve todos los modelos excepto los que están en los presets
+           return models.filter(model => !presetIds.includes(model.id))
+         }
       }
     },
     {

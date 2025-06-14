@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useChatStore } from '@/stores/chat-store'
 import {
   Select,
@@ -7,17 +8,30 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectSeparator,
 } from '@/components/ui/select'
 import { motion } from 'framer-motion'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 
 export function ModelSelector() {
   const {
-    models,
     selectedModel,
     setSelectedModel,
     isLoadingModels,
+    getAvailablePresets,
+    getOtherModels,
   } = useChatStore()
+
+  const [showAllModels, setShowAllModels] = useState(false)
+  const availablePresets = getAvailablePresets()
+  const otherModels = getOtherModels()
+
+  // Encontrar el nombre a mostrar para el modelo seleccionado
+  const getDisplayName = (modelId: string) => {
+    const preset = availablePresets.find(p => p.id === modelId)
+    if (preset) return preset.displayName
+    return modelId
+  }
 
   return (
     <motion.div
@@ -37,15 +51,56 @@ export function ModelSelector() {
               <span>Loading...</span>
             </div>
           ) : (
-            <SelectValue placeholder="Select a model" />
+            <SelectValue placeholder="Select a model">
+              {getDisplayName(selectedModel)}
+            </SelectValue>
           )}
         </SelectTrigger>
-        <SelectContent position="popper">
-          {models.map((model) => (
-            <SelectItem key={model.id} value={model.id}>
-              {model.name}
+        <SelectContent 
+          position="popper" 
+          className="w-64"
+        >
+          {/* Presets disponibles */}
+          {availablePresets.map((preset) => (
+            <SelectItem key={preset.id} value={preset.id}>
+              {preset.displayName}
             </SelectItem>
           ))}
+          
+          {/* Separador y desplegable de otros modelos */}
+          {otherModels.length > 0 && availablePresets.length > 0 && (
+            <SelectSeparator />
+          )}
+          
+          {otherModels.length > 0 && (
+            <>
+              <div
+                className="flex items-center gap-2 px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent/50 cursor-pointer rounded-sm"
+                onClick={() => setShowAllModels(!showAllModels)}
+              >
+                {showAllModels ? (
+                  <ChevronDown className="h-3 w-3" />
+                ) : (
+                  <ChevronRight className="h-3 w-3" />
+                )}
+                Show all models
+              </div>
+              
+              {showAllModels && (
+                <>
+                  <div className="px-3 py-2 text-xs text-muted-foreground/70 italic border-b border-border/50 mb-1">
+                    These are all models available from the API. Many may not work with our interface, but we provide the freedom to try them.
+                  </div>
+                  
+                  {otherModels.map((model) => (
+                    <SelectItem key={model.id} value={model.id} className="pl-6">
+                      {model.name}
+                    </SelectItem>
+                  ))}
+                </>
+              )}
+            </>
+          )}
         </SelectContent>
       </Select>
     </motion.div>
