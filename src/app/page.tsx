@@ -13,7 +13,7 @@ import { AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function ChatPage() {
-  const { messages, isLoading, error, fetchModels } = useChatStore()
+  const { messages, isLoading, error, fetchModels, init } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
@@ -27,8 +27,9 @@ export default function ChatPage() {
 
   // Fetch models on page load
   useEffect(() => {
+    init()
     fetchModels()
-  }, [fetchModels])
+  }, [fetchModels, init])
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen)
@@ -45,7 +46,7 @@ export default function ChatPage() {
         {/* Main content */}
         <main className={cn(
           "flex-1 flex flex-col transition-all ease-out",
-          isSidebarOpen ? "ml-80 duration-200" : "ml-0 duration-0"
+          isSidebarOpen ? "ml-80 duration-100" : "ml-0 duration-0"
         )}>
           {messages.length === 0 && !error ? (
             /* 🏠 HOME SCREEN - Empty state when no messages */

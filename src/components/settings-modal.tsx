@@ -35,20 +35,16 @@ interface SettingsModalProps {
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [apiKey, setApiKey] = useState('')
-  const [selectedModel, setSelectedModel] = useState('')
   const [showApiKey, setShowApiKey] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   
-  // Use models from the store instead of local state
-  const { models, isLoadingModels, modelsError, fetchModels } = useChatStore()
+  const { fetchModels } = useChatStore()
 
   useEffect(() => {
-    // Load API key and model from localStorage when modal opens
+    // Load API key from localStorage when modal opens
     if (open) {
       const storedKey = localStorage.getItem('openai_api_key') || ''
-      const storedModel = localStorage.getItem('openai_model') || 'gpt-4o-mini'
       setApiKey(storedKey)
-      setSelectedModel(storedModel)
     }
   }, [open])
 
@@ -61,10 +57,6 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         localStorage.setItem('openai_api_key', apiKey.trim())
       } else {
         localStorage.removeItem('openai_api_key')
-      }
-      
-      if (selectedModel) {
-        localStorage.setItem('openai_model', selectedModel)
       }
       
       // Refetch models if API key changed
@@ -85,17 +77,13 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     setApiKey(value)
   }
 
-  const handleLoadModels = () => {
-    fetchModels()
-  }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
+          <DialogTitle>API Settings</DialogTitle>
           <DialogDescription>
-            Configure your API settings and preferences.
+            Manage your OpenAI API key here.
           </DialogDescription>
         </DialogHeader>
         
@@ -127,69 +115,6 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             </div>
             <p className="text-sm text-muted-foreground">
               Your API key is stored locally and never sent to our servers.
-            </p>
-          </div>
-
-          <div className="grid gap-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="model">Model</Label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleLoadModels}
-                className="h-8 text-xs"
-                disabled={isLoadingModels}
-              >
-                {isLoadingModels ? 'Loading...' : 'Refresh Models'}
-              </Button>
-            </div>
-            
-            <Select
-              value={selectedModel}
-              onValueChange={setSelectedModel}
-              disabled={isLoadingModels}
-            >
-              <SelectTrigger>
-                <SelectValue 
-                  placeholder={
-                    isLoadingModels 
-                      ? "Loading models..." 
-                      : models.length 
-                        ? "Select a model" 
-                        : "No models available"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent position="item-aligned">
-                {models.map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
-                    <div className="flex flex-col">
-                      <span>{model.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        by {model.owned_by}
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {isLoadingModels && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading available models...
-              </div>
-            )}
-
-            {modelsError && (
-              <p className="text-sm text-red-600 dark:text-red-400">
-                {modelsError}
-              </p>
-            )}
-
-            <p className="text-sm text-muted-foreground">
-              Choose the AI model for your conversations. Different models have varying capabilities and costs.
             </p>
           </div>
         </div>

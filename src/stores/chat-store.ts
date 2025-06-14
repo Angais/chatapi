@@ -20,6 +20,7 @@ export interface Chat {
   messages: Message[]
   createdAt: string
   updatedAt: string
+  model: string
 }
 
 interface ChatState {
@@ -28,6 +29,7 @@ interface ChatState {
   messages: Message[]
   isLoading: boolean
   error: string | null
+  selectedModel: string
   
   // Chat history
   chats: Chat[]
@@ -38,6 +40,7 @@ interface ChatState {
   modelsError: string | null
   
   // Actions
+  init: () => void
   addMessage: (content: string, isUser: boolean) => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
@@ -50,6 +53,7 @@ interface ChatState {
   loadChat: (chatId: string) => void
   deleteChat: (chatId: string) => void
   updateChatTitle: (chatId: string, title: string) => void
+  setSelectedModel: (model: string) => void
 }
 
 // Helper function to generate chat title from first message
@@ -92,10 +96,27 @@ export const useChatStore = create<ChatState>()(
         messages: [],
         isLoading: false,
         error: null,
+        selectedModel: 'gpt-4o-mini',
         chats: [],
         models: [],
         isLoadingModels: false,
         modelsError: null,
+
+        init: () => {
+          const state = get()
+          if (state) {
+            const { currentChatId, chats } = state
+            let modelToSet = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
+  
+            if (currentChatId) {
+              const currentChat = chats.find(c => c.id === currentChatId)
+              if (currentChat && currentChat.model) {
+                modelToSet = currentChat.model
+              }
+            }
+            set({ selectedModel: modelToSet })
+          }
+        },
 
         addMessage: (content: string, isUser: boolean) => {
           const newMessage: Message = {
@@ -120,6 +141,7 @@ export const useChatStore = create<ChatState>()(
                 messages: updatedMessages,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
+                model: get().selectedModel,
               }
               
               return {
@@ -153,11 +175,13 @@ export const useChatStore = create<ChatState>()(
             // Chat is already auto-saved, no need to update again
           }
           
+          const preferredModel = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
           // Clear current chat
           set({
             currentChatId: null,
             messages: [],
             error: null,
+            selectedModel: preferredModel,
           })
         },
 
@@ -173,6 +197,7 @@ export const useChatStore = create<ChatState>()(
               currentChatId: chatId,
               messages: chatToLoad.messages,
               error: null,
+              selectedModel: chatToLoad.model || 'gpt-4o-mini',
             })
           }
         },
@@ -183,11 +208,13 @@ export const useChatStore = create<ChatState>()(
             
             // If we're deleting the current chat, clear it
             if (state.currentChatId === chatId) {
+              const preferredModel = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
               return {
                 chats: updatedChats,
                 currentChatId: null,
                 messages: [],
                 error: null,
+                selectedModel: preferredModel,
               }
             }
             
@@ -203,9 +230,30 @@ export const useChatStore = create<ChatState>()(
           }))
         },
 
+        setSelectedModel: (model: string) => {
+          set({ selectedModel: model })
+
+          // Persist as preferred model for next time
+          localStorage.setItem('openai_preferred_model', model)
+
+          // Update model for current chat if there is one
+          const { currentChatId, chats } = get()
+          if (currentChatId) {
+            const currentChat = chats.find(c => c.id === currentChatId)
+            // Only update if model has actually changed to avoid unnecessary re-renders
+            if (currentChat && currentChat.model !== model) {
+              set(state => ({
+                chats: state.chats.map(chat =>
+                  chat.id === currentChatId ? { ...chat, model } : chat
+                ),
+              }))
+            }
+          }
+        },
+
         sendMessage: async (content: string) => {
           const apiKey = localStorage.getItem('openai_api_key')
-          const model = localStorage.getItem('openai_model') || 'gpt-4o-mini'
+          const model = get().selectedModel
           
           if (!apiKey) {
             set({ error: 'Please set your OpenAI API key in settings' })
@@ -311,9 +359,16 @@ export const useChatStore = create<ChatState>()(
         currentChatId: state.currentChatId,
         messages: state.messages, // Also persist current messages
       }),
-      version: 1, // Add versioning for future migrations
+      version: 2, // Add versioning for future migrations
       migrate: (persistedState: any, version: number) => {
-        // Handle future migrations if needed
+        if (version < 2) {
+          if (persistedState && persistedState.chats) {
+            persistedState.chats = persistedState.chats.map((chat: any) => ({
+              ...chat,
+              model: 'gpt-4o-mini',
+            }))
+          }
+        }
         return persistedState
       },
     }

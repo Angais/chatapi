@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { useTheme } from '@/hooks/use-theme'
 import { SettingsModal } from '@/components/settings-modal'
 import { useChatStore } from '@/stores/chat-store'
+import { ModelSelector } from './model-selector'
 
 interface HeaderProps {
   onToggleSidebar: () => void
@@ -57,6 +58,8 @@ export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
           
           <h1 className="text-lg font-semibold">Chatapi</h1>
           
+          <ModelSelector />
+
           <Button
             variant="ghost"
             size="icon"

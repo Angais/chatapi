@@ -60,7 +60,7 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
           transition={{ 
             x: {
               type: "tween",
-              duration: isOpen ? 0.2 : 0,
+              duration: isOpen ? 0.1 : 0,
               ease: [0.25, 0.1, 0.25, 1]
             }
           }}
