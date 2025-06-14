@@ -16,15 +16,63 @@ import { cn } from '@/lib/utils'
 export default function ChatPage() {
   const { messages, isLoading, isStreaming, streamingMessage, error, fetchModels, init } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [dynamicPadding, setDynamicPadding] = useState(0)
+  const prevMessagesLengthRef = useRef(messages.length)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
+  const addSpaceForNewMessage = () => {
+    if (!chatContainerRef.current) return
+
+    const container = chatContainerRef.current
+    const hasScroll = container.scrollHeight > container.clientHeight
+    
+    if (hasScroll) {
+      // Calcular el espacio más preciso necesario
+      const viewportHeight = container.clientHeight
+      const currentScrollTop = container.scrollTop
+      const scrollHeight = container.scrollHeight
+      
+      // Aumentar un poco más el espacio para mejor visibilidad
+      const spaceToAdd = Math.min(viewportHeight * 0.7, 600) // Aumentado a 60% y máximo 600px
+      setDynamicPadding(prevPadding => prevPadding + spaceToAdd)
+    }
+  }
+
   useEffect(() => {
-    scrollToBottom()
-  }, [messages, isLoading, isStreaming, streamingMessage])
+    // Cuando se agrega un nuevo mensaje
+    const messagesLengthChanged = messages.length !== prevMessagesLengthRef.current
+    prevMessagesLengthRef.current = messages.length
+    
+    if (messagesLengthChanged && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1]
+      
+      // SOLO hacer scroll automático para mensajes del USUARIO
+      if (lastMessage.isUser) {
+        // Añadir espacio para que quede arriba
+        addSpaceForNewMessage()
+        
+        // Esperar a que se actualice el DOM con el nuevo padding antes de hacer scroll
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            scrollToBottom()
+          })
+        })
+      }
+      // Para mensajes de IA: NO hacer scroll automático, que aparezcan abajo
+    }
+  }, [messages])
+
+  // Resetear el padding cuando se inicia una nueva conversación
+  useEffect(() => {
+    if (messages.length === 0) {
+      setDynamicPadding(0)
+    }
+  }, [messages.length])
 
   // Fetch models on page load
   useEffect(() => {
@@ -55,6 +103,7 @@ export default function ChatPage() {
           ) : (
             /* 💬 CHAT VIEW - Conversation messages */
             <motion.div 
+              ref={chatContainerRef}
               className="flex-1 overflow-auto"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -99,7 +148,12 @@ export default function ChatPage() {
               {/* Typing indicator */}
               {(isLoading || isStreaming) && <TypingIndicator />}
               
-              <div ref={messagesEndRef} />
+              {/* Dynamic padding to create space for new messages */}
+              <div 
+                ref={messagesEndRef} 
+                style={{ paddingBottom: `${dynamicPadding}px` }}
+                className="transition-all duration-300 ease-out"
+              />
             </motion.div>
           )}
           
