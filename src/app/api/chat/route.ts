@@ -3,7 +3,7 @@ import OpenAI from 'openai'
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, apiKey, model, reasoningEffort } = await request.json()
+    const { messages, apiKey, model, reasoningEffort, stream } = await request.json()
 
     if (!apiKey) {
       return NextResponse.json(
@@ -29,6 +29,100 @@ export async function POST(request: NextRequest) {
     // Check if this is a reasoning model or if reasoning effort is needed
     const needsReasoningEffort = ['o3', 'o3-pro', 'o4-mini'].includes(selectedModel) || reasoningEffortValue !== 'no-reasoning'
 
+    // For streaming requests
+    if (stream) {
+      const encoder = new TextEncoder()
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          try {
+            // Try with standard parameters first for non-reasoning models
+            let completionParams: any = {
+              model: selectedModel,
+              messages: messages,
+              stream: true,
+            }
+
+            if (!needsReasoningEffort) {
+              completionParams.temperature = 0.7
+              completionParams.max_tokens = 1000
+            } else {
+              completionParams.max_completion_tokens = 1000
+              if (reasoningEffortValue !== 'no-reasoning') {
+                completionParams.reasoning_effort = reasoningEffortValue
+              }
+            }
+
+            const completion = await openai.chat.completions.create(completionParams) as any
+
+            for await (const chunk of completion) {
+              const data = `data: ${JSON.stringify(chunk)}\n\n`
+              controller.enqueue(encoder.encode(data))
+            }
+
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+            controller.close()
+          } catch (error: any) {
+            console.error('Streaming error:', error)
+            
+            // Handle different error types with fallback attempts
+            if (error?.status === 400) {
+              try {
+                // Try fallback with different parameters
+                let fallbackParams: any = {
+                  model: selectedModel,
+                  messages: messages,
+                  stream: true,
+                }
+
+                if (error?.message?.includes("'max_tokens' is not supported")) {
+                  fallbackParams.max_completion_tokens = 1000
+                } else if (error?.message?.includes('reasoning_effort')) {
+                  fallbackParams.max_completion_tokens = 1000
+                } else {
+                  fallbackParams.temperature = 0.7
+                  fallbackParams.max_tokens = 1000
+                }
+
+                                 const fallbackCompletion = await openai.chat.completions.create(fallbackParams) as any
+
+                 for await (const chunk of fallbackCompletion) {
+                   const data = `data: ${JSON.stringify(chunk)}\n\n`
+                   controller.enqueue(encoder.encode(data))
+                 }
+
+                controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+                controller.close()
+              } catch (fallbackError: any) {
+                const errorData = `data: ${JSON.stringify({
+                  error: fallbackError?.message || 'An error occurred',
+                  unsupportedModel: fallbackError?.status === 400 || fallbackError?.status === 404 || fallbackError?.status === 403
+                })}\n\n`
+                controller.enqueue(encoder.encode(errorData))
+                controller.close()
+              }
+            } else {
+              const errorData = `data: ${JSON.stringify({
+                error: error?.message || 'An error occurred',
+                status: error?.status
+              })}\n\n`
+              controller.enqueue(encoder.encode(errorData))
+              controller.close()
+            }
+          }
+        }
+      })
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      })
+    }
+
+    // Non-streaming logic (keep existing code for backwards compatibility)
     // Try with standard parameters first for non-reasoning models
     if (!needsReasoningEffort) {
       try {
@@ -45,26 +139,26 @@ export async function POST(request: NextRequest) {
           message: responseMessage,
           usage: completion.usage,
         })
-              } catch (initialError: any) {
-          // If we get a parameter error, it might be a reasoning model, try with reasoning parameters
-          if (initialError?.status === 400 && 
-              initialError?.message?.includes("'max_tokens' is not supported")) {
-            
-            console.log(`Model ${selectedModel} requires reasoning parameters, retrying...`)
-            // Fall through to reasoning model logic
-          } else if (initialError?.status === 400 || initialError?.status === 404 || initialError?.status === 403) {
-            // Treat as unsupported model error
-            return NextResponse.json(
-              { 
-                error: 'This model is not supported',
-                unsupportedModel: true 
-              },
-              { status: 400 }
-            )
-          } else {
-            throw initialError
-          }
+      } catch (initialError: any) {
+        // If we get a parameter error, it might be a reasoning model, try with reasoning parameters
+        if (initialError?.status === 400 && 
+            initialError?.message?.includes("'max_tokens' is not supported")) {
+          
+          console.log(`Model ${selectedModel} requires reasoning parameters, retrying...`)
+          // Fall through to reasoning model logic
+        } else if (initialError?.status === 400 || initialError?.status === 404 || initialError?.status === 403) {
+          // Treat as unsupported model error
+          return NextResponse.json(
+            { 
+              error: 'This model is not supported',
+              unsupportedModel: true 
+            },
+            { status: 400 }
+          )
+        } else {
+          throw initialError
         }
+      }
     }
 
     // Use reasoning model parameters

@@ -14,7 +14,7 @@ import { AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function ChatPage() {
-  const { messages, isLoading, error, fetchModels, init } = useChatStore()
+  const { messages, isLoading, isStreaming, streamingMessage, error, fetchModels, init } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
@@ -24,7 +24,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     scrollToBottom()
-  }, [messages, isLoading])
+  }, [messages, isLoading, isStreaming, streamingMessage])
 
   // Fetch models on page load
   useEffect(() => {
@@ -49,7 +49,7 @@ export default function ChatPage() {
           "flex-1 flex flex-col transition-all ease-out",
           isSidebarOpen ? "ml-80 duration-100" : "ml-0 duration-0"
         )}>
-          {messages.length === 0 && !error ? (
+          {messages.length === 0 && !error && !isStreaming ? (
             /* 🏠 HOME SCREEN - Empty state when no messages */
             <EmptyState />
           ) : (
@@ -86,8 +86,18 @@ export default function ChatPage() {
                 />
               ))}
               
+              {/* Streaming message */}
+              {isStreaming && streamingMessage && (
+                <ChatMessage
+                  key="streaming"
+                  content={streamingMessage}
+                  isUser={false}
+                  isStreaming={true}
+                />
+              )}
+              
               {/* Typing indicator */}
-              {isLoading && <TypingIndicator />}
+              {(isLoading || isStreaming) && <TypingIndicator />}
               
               <div ref={messagesEndRef} />
             </motion.div>

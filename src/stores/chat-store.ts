@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { devtools } from 'zustand/middleware'
 
 export interface Message {
   id: string
@@ -111,6 +112,9 @@ interface ChatState {
   currentChatId: string | null
   messages: Message[]
   isLoading: boolean
+  isStreaming: boolean
+  streamingMessage: string
+  abortController: AbortController | null
   error: string | null
   selectedModel: string
   reasoningEffort: ReasoningEffort
@@ -133,6 +137,10 @@ interface ChatState {
   init: () => void
   addMessage: (content: string, isUser: boolean, debugInfo?: any) => void
   setLoading: (loading: boolean) => void
+  setStreaming: (streaming: boolean) => void
+  setStreamingMessage: (message: string) => void
+  setAbortController: (controller: AbortController | null) => void
+  stopStreaming: () => void
   setError: (error: string | null) => void
   setUnsupportedModelError: (error: string | null) => void
   clearMessages: () => void
@@ -157,6 +165,9 @@ interface ChatState {
   // Reasoning effort helpers
   shouldShowReasoningSelector: () => boolean
   getDefaultReasoningEffort: (modelId: string) => ReasoningEffort
+  
+  // Streaming helpers
+  isReasoningModel: (modelId?: string) => boolean
 }
 
 // Helper function to generate chat title from first message
@@ -180,396 +191,490 @@ const debounce = <T extends (...args: any[]) => any>(
 }
 
 export const useChatStore = create<ChatState>()(
-  persist(
-    (set, get) => {
-      // Create a debounced function to update chat history
-      const debouncedUpdateChatHistory = debounce((chatId: string, messages: Message[]) => {
-        set((state) => ({
-          chats: state.chats.map(chat =>
-            chat.id === chatId
-              ? { ...chat, messages, updatedAt: new Date().toISOString() }
-              : chat
-          )
-        }))
-      }, 500) // 500ms delay
-
-      return {
-        // Initial state
-        currentChatId: null,
-        messages: [],
-        isLoading: false,
-        error: null,
-        selectedModel: 'gpt-4o-mini',
-        chats: [],
-        models: [],
-        isLoadingModels: false,
-        modelsError: null,
-        reasoningEffort: 'no-reasoning',
-        devMode: false,
-        unsupportedModelError: null,
-
-        init: () => {
-          const state = get()
-          if (state) {
-            const { currentChatId, chats } = state
-            let modelToSet = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
-            let reasoningEffortToSet: ReasoningEffort = 'no-reasoning'
-  
-            if (currentChatId) {
-              const currentChat = chats.find(c => c.id === currentChatId)
-              if (currentChat && currentChat.model) {
-                modelToSet = currentChat.model
-                reasoningEffortToSet = currentChat.reasoningEffort || get().getDefaultReasoningEffort(modelToSet)
-              }
-            } else {
-              reasoningEffortToSet = get().getDefaultReasoningEffort(modelToSet)
-            }
-            
-            set({ 
-              selectedModel: modelToSet,
-              reasoningEffort: reasoningEffortToSet
-            })
-          }
-        },
-
-        addMessage: (content: string, isUser: boolean, debugInfo?: any) => {
-          const newMessage: Message = {
-            id: Date.now().toString(),
-            content,
-            isUser,
-            timestamp: new Date().toLocaleTimeString('en-US', {
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true,
-            }),
-            debugInfo,
-          }
-          
-          set((state) => {
-            const updatedMessages = [...state.messages, newMessage]
-            
-            // If this is the first message and we don't have a current chat, create one
-            if (!state.currentChatId && isUser) {
-              const newChat: Chat = {
-                id: Date.now().toString(),
-                title: generateChatTitle(content),
-                messages: updatedMessages,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                model: get().selectedModel,
-                reasoningEffort: get().reasoningEffort,
-              }
-              
-              return {
-                messages: updatedMessages,
-                currentChatId: newChat.id,
-                chats: [newChat, ...state.chats],
-              }
-            }
-            
-            // For existing chats, update messages immediately but debounce chat history update
-            if (state.currentChatId) {
-              debouncedUpdateChatHistory(state.currentChatId, updatedMessages)
-            }
-            
-            // Only update messages array immediately
-            return { messages: updatedMessages }
-          })
-        },
-
-        setLoading: (loading: boolean) => set({ isLoading: loading }),
-        
-        setError: (error: string | null) => set({ error }),
-
-        setUnsupportedModelError: (error: string | null) => set({ unsupportedModelError: error }),
-
-        clearMessages: () => set({ messages: [], error: null, unsupportedModelError: null }),
-
-        createNewChat: () => {
-          const state = get()
-          
-          // Only save if there are messages
-          if (state.currentChatId && state.messages.length > 0) {
-            // Chat is already auto-saved, no need to update again
-          }
-          
-          const preferredModel = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
-          const defaultReasoningEffort = get().getDefaultReasoningEffort(preferredModel)
-          
-          // Clear current chat
-          set({
-            currentChatId: null,
-            messages: [],
-            error: null,
-            unsupportedModelError: null,
-            selectedModel: preferredModel,
-            reasoningEffort: defaultReasoningEffort,
-          })
-        },
-
-        loadChat: (chatId: string) => {
-          const state = get()
-          
-          // No need to save current chat as it's already auto-saved
-          
-          // Load selected chat
-          const chatToLoad = state.chats.find(chat => chat.id === chatId)
-          if (chatToLoad) {
-            set({
-              currentChatId: chatId,
-              messages: chatToLoad.messages,
-              error: null,
-              unsupportedModelError: null,
-              selectedModel: chatToLoad.model || 'gpt-4o-mini',
-              reasoningEffort: chatToLoad.reasoningEffort || get().getDefaultReasoningEffort(chatToLoad.model || 'gpt-4o-mini'),
-            })
-          }
-        },
-
-        deleteChat: (chatId: string) => {
-          set((state) => {
-            const updatedChats = state.chats.filter(chat => chat.id !== chatId)
-            
-            // If we're deleting the current chat, clear it
-            if (state.currentChatId === chatId) {
-              const preferredModel = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
-              const defaultReasoningEffort = get().getDefaultReasoningEffort(preferredModel)
-              return {
-                chats: updatedChats,
-                currentChatId: null,
-                messages: [],
-                error: null,
-                unsupportedModelError: null,
-                selectedModel: preferredModel,     
-                reasoningEffort: defaultReasoningEffort,
-              }
-            }
-            
-            return { chats: updatedChats }
-          })
-        },
-
-        updateChatTitle: (chatId: string, title: string) => {
+  devtools(
+    persist(
+      (set, get) => {
+        // Create a debounced function to update chat history
+        const debouncedUpdateChatHistory = debounce((chatId: string, messages: Message[]) => {
           set((state) => ({
             chats: state.chats.map(chat =>
-              chat.id === chatId ? { ...chat, title } : chat
+              chat.id === chatId
+                ? { ...chat, messages, updatedAt: new Date().toISOString() }
+                : chat
             )
           }))
-        },
+        }, 500) // 500ms delay
 
-        setSelectedModel: (model: string) => {
-          const defaultReasoningEffort = get().getDefaultReasoningEffort(model)
-          set({ 
-            selectedModel: model,
-            reasoningEffort: defaultReasoningEffort
-          })
+        return {
+          // Initial state
+          currentChatId: null,
+          messages: [],
+          isLoading: false,
+          isStreaming: false,
+          streamingMessage: '',
+          abortController: null,
+          error: null,
+          selectedModel: 'gpt-4o-mini',
+          chats: [],
+          models: [],
+          isLoadingModels: false,
+          modelsError: null,
+          reasoningEffort: 'no-reasoning',
+          devMode: false,
+          unsupportedModelError: null,
 
-          // Persist as preferred model for next time
-          localStorage.setItem('openai_preferred_model', model)
-
-          // Update model for current chat if there is one
-          const { currentChatId, chats } = get()
-          if (currentChatId) {
-            const currentChat = chats.find(c => c.id === currentChatId)
-            // Only update if model has actually changed to avoid unnecessary re-renders
-            if (currentChat && currentChat.model !== model) {
-              set(state => ({
-                chats: state.chats.map(chat =>
-                  chat.id === currentChatId ? { 
-                    ...chat, 
-                    model,
-                    reasoningEffort: defaultReasoningEffort
-                  } : chat
-                ),
-              }))
+          init: () => {
+            const state = get()
+            if (state) {
+              const { currentChatId, chats } = state
+              let modelToSet = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
+              let reasoningEffortToSet: ReasoningEffort = 'no-reasoning'
+    
+              if (currentChatId) {
+                const currentChat = chats.find(c => c.id === currentChatId)
+                if (currentChat && currentChat.model) {
+                  modelToSet = currentChat.model
+                  reasoningEffortToSet = currentChat.reasoningEffort || get().getDefaultReasoningEffort(modelToSet)
+                }
+              } else {
+                reasoningEffortToSet = get().getDefaultReasoningEffort(modelToSet)
+              }
+              
+              set({ 
+                selectedModel: modelToSet,
+                reasoningEffort: reasoningEffortToSet
+              })
             }
-          }
-        },
+          },
 
-        sendMessage: async (content: string) => {
-          const apiKey = localStorage.getItem('openai_api_key')
-          const model = get().selectedModel
-          const reasoningEffort = get().reasoningEffort
-          const devMode = get().devMode
-          
-          if (!apiKey) {
-            set({ error: 'Please set your OpenAI API key in settings' })
-            return
-          }
-
-          // Prepare messages for API
-          const currentMessages = get().messages
-          const messagesToSend = [
-            ...currentMessages.map(msg => ({
-              role: msg.isUser ? 'user' : 'assistant',
-              content: msg.content,
-            })),
-            { role: 'user', content },
-          ]
-
-          // Debug info for user message
-          const userDebugInfo = devMode ? {
-            sentToAPI: {
-              model,
-              messages: messagesToSend,
-              temperature: 0.7,
-              max_tokens: model.includes('o3') || model.includes('o4') ? undefined : 1000,
-              max_completion_tokens: model.includes('o3') || model.includes('o4') ? 1000 : undefined,
-              reasoning_effort: reasoningEffort !== 'no-reasoning' ? reasoningEffort : undefined,
-              timestamp: new Date().toISOString(),
-            }
-          } : undefined
-
-          // Add user message with debug info
-          get().addMessage(content, true, userDebugInfo)
-          set({ isLoading: true, error: null, unsupportedModelError: null })
-
-          const startTime = Date.now()
-
-          try {
-            const response = await fetch('/api/chat', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                messages: messagesToSend,
-                apiKey,
-                model,
-                reasoningEffort,
+          addMessage: (content: string, isUser: boolean, debugInfo?: any) => {
+            const newMessage: Message = {
+              id: Date.now().toString(),
+              content,
+              isUser,
+              timestamp: new Date().toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
               }),
+              debugInfo,
+            }
+            
+            set((state) => {
+              const updatedMessages = [...state.messages, newMessage]
+              
+              // If this is the first message and we don't have a current chat, create one
+              if (!state.currentChatId && isUser) {
+                const newChat: Chat = {
+                  id: Date.now().toString(),
+                  title: generateChatTitle(content),
+                  messages: updatedMessages,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  model: get().selectedModel,
+                  reasoningEffort: get().reasoningEffort,
+                }
+                
+                return {
+                  messages: updatedMessages,
+                  currentChatId: newChat.id,
+                  chats: [newChat, ...state.chats],
+                }
+              }
+              
+              // For existing chats, update messages immediately but debounce chat history update
+              if (state.currentChatId) {
+                debouncedUpdateChatHistory(state.currentChatId, updatedMessages)
+              }
+              
+              // Only update messages array immediately
+              return { messages: updatedMessages }
+            })
+          },
+
+          setLoading: (loading: boolean) => set({ isLoading: loading }),
+          setStreaming: (streaming: boolean) => set({ isStreaming: streaming }),
+          setStreamingMessage: (message: string) => set({ streamingMessage: message }),
+          setAbortController: (controller: AbortController | null) => set({ abortController: controller }),
+          
+          stopStreaming: () => {
+            const { abortController, streamingMessage, devMode, selectedModel } = get()
+            if (abortController) {
+              abortController.abort()
+              
+              // Si hay contenido parcial generado, guardarlo como mensaje completo
+              if (streamingMessage.trim()) {
+                const assistantDebugInfo = devMode ? {
+                  receivedFromAPI: {
+                    model: selectedModel,
+                    response: streamingMessage,
+                    timestamp: new Date().toISOString(),
+                    cancelled: true,
+                  }
+                } : undefined
+
+                get().addMessage(streamingMessage, false, assistantDebugInfo)
+              }
+              
+              set({ 
+                abortController: null,
+                isStreaming: false,
+                isLoading: false,
+                streamingMessage: ''
+              })
+            }
+          },
+
+          setError: (error: string | null) => set({ error }),
+          setUnsupportedModelError: (error: string | null) => set({ unsupportedModelError: error }),
+          clearMessages: () => set({ messages: [], error: null, unsupportedModelError: null }),
+
+          createNewChat: () => {
+            const state = get()
+            
+            // Only save if there are messages
+            if (state.currentChatId && state.messages.length > 0) {
+              // Chat is already auto-saved, no need to update again
+            }
+            
+            const preferredModel = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
+            const defaultReasoningEffort = get().getDefaultReasoningEffort(preferredModel)
+            
+            // Clear current chat
+            set({
+              currentChatId: null,
+              messages: [],
+              error: null,
+              unsupportedModelError: null,
+              selectedModel: preferredModel,
+              reasoningEffort: defaultReasoningEffort,
+            })
+          },
+
+          loadChat: (chatId: string) => {
+            const state = get()
+            
+            // No need to save current chat as it's already auto-saved
+            
+            // Load selected chat
+            const chatToLoad = state.chats.find(chat => chat.id === chatId)
+            if (chatToLoad) {
+              set({
+                currentChatId: chatId,
+                messages: chatToLoad.messages,
+                error: null,
+                unsupportedModelError: null,
+                selectedModel: chatToLoad.model || 'gpt-4o-mini',
+                reasoningEffort: chatToLoad.reasoningEffort || get().getDefaultReasoningEffort(chatToLoad.model || 'gpt-4o-mini'),
+              })
+            }
+          },
+
+          deleteChat: (chatId: string) => {
+            set((state) => {
+              const updatedChats = state.chats.filter(chat => chat.id !== chatId)
+              
+              // If we're deleting the current chat, clear it
+              if (state.currentChatId === chatId) {
+                const preferredModel = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
+                const defaultReasoningEffort = get().getDefaultReasoningEffort(preferredModel)
+                return {
+                  chats: updatedChats,
+                  currentChatId: null,
+                  messages: [],
+                  error: null,
+                  unsupportedModelError: null,
+                  selectedModel: preferredModel,     
+                  reasoningEffort: defaultReasoningEffort,
+                }
+              }
+              
+              return { chats: updatedChats }
+            })
+          },
+
+          updateChatTitle: (chatId: string, title: string) => {
+            set((state) => ({
+              chats: state.chats.map(chat =>
+                chat.id === chatId ? { ...chat, title } : chat
+              )
+            }))
+          },
+
+          setSelectedModel: (model: string) => {
+            const defaultReasoningEffort = get().getDefaultReasoningEffort(model)
+            set({ 
+              selectedModel: model,
+              reasoningEffort: defaultReasoningEffort
             })
 
-            const data = await response.json()
-            const responseTime = Date.now() - startTime
+            // Persist as preferred model for next time
+            localStorage.setItem('openai_preferred_model', model)
 
-            if (!response.ok) {
-              // Check if it's an unsupported model error
-              if (data.unsupportedModel) {
-                // Remove the last user message
-                set(state => ({
-                  messages: state.messages.slice(0, -1),
-                  unsupportedModelError: data.error,
-                  isLoading: false
-                }))
-                return
-              }
-              throw new Error(data.error || 'Failed to get response')
-            }
-
-            // If the model doesn't support reasoning effort, update it automatically
-            if (data.reasoningNotSupported && reasoningEffort !== 'no-reasoning') {
-              console.log(`Auto-configuring model ${model} to use no-reasoning`)
-              get().setReasoningEffort('no-reasoning')
-              
-              // Update current chat model settings if there's an active chat
-              const { currentChatId, chats } = get()
-              if (currentChatId) {
+            // Update model for current chat if there is one
+            const { currentChatId, chats } = get()
+            if (currentChatId) {
+              const currentChat = chats.find(c => c.id === currentChatId)
+              // Only update if model has actually changed to avoid unnecessary re-renders
+              if (currentChat && currentChat.model !== model) {
                 set(state => ({
                   chats: state.chats.map(chat =>
                     chat.id === currentChatId ? { 
                       ...chat, 
-                      reasoningEffort: 'no-reasoning'
+                      model,
+                      reasoningEffort: defaultReasoningEffort
                     } : chat
                   ),
                 }))
               }
             }
+          },
 
-            // Debug info for assistant response
-            const assistantDebugInfo = devMode ? {
-              receivedFromAPI: {
+          sendMessage: async (content: string) => {
+            const apiKey = localStorage.getItem('openai_api_key')
+            const model = get().selectedModel
+            const reasoningEffort = get().reasoningEffort
+            const devMode = get().devMode
+            
+            if (!apiKey) {
+              set({ error: 'Please set your OpenAI API key in settings' })
+              return
+            }
+
+            // Clear previous errors
+            set({ error: null, unsupportedModelError: null })
+
+            // Prepare messages for API
+            const currentMessages = get().messages
+            const messagesToSend = [
+              ...currentMessages.map(msg => ({
+                role: msg.isUser ? 'user' : 'assistant',
+                content: msg.content,
+              })),
+              { role: 'user', content },
+            ]
+
+            // Debug info for user message
+            const userDebugInfo = devMode ? {
+              sentToAPI: {
                 model,
-                response: data.message,
-                usage: data.usage, // Si la API devuelve usage info
+                messages: messagesToSend,
+                temperature: 0.7,
+                max_tokens: model.includes('o3') || model.includes('o4') ? undefined : 1000,
+                max_completion_tokens: model.includes('o3') || model.includes('o4') ? 1000 : undefined,
+                reasoning_effort: reasoningEffort !== 'no-reasoning' ? reasoningEffort : undefined,
                 timestamp: new Date().toISOString(),
-                responseTime,
-                reasoningNotSupported: data.reasoningNotSupported,
+                stream: true,
               }
             } : undefined
 
-            // Add assistant message with debug info
-            get().addMessage(data.message, false, assistantDebugInfo)
-          } catch (error) {
-            console.error('Chat error:', error)
-            const errorObj = error as any
-            set({ error: errorObj?.message || 'An error occurred' })
-          } finally {
-            set({ isLoading: false })
-          }
-        },
+            // Add user message with debug info
+            get().addMessage(content, true, userDebugInfo)
+            set({ isLoading: true })
 
-        fetchModels: async () => {
-          const apiKey = localStorage.getItem('openai_api_key')
-          if (!apiKey) {
-            // Set default models if no API key
-            set({
-              models: [
-                { id: 'gpt-4o-mini', name: 'gpt-4o-mini', owned_by: 'openai' },
-                { id: 'gpt-4o', name: 'gpt-4o', owned_by: 'openai' },
-                { id: 'gpt-4-turbo', name: 'gpt-4-turbo', owned_by: 'openai' },
-                { id: 'gpt-3.5-turbo', name: 'gpt-3.5-turbo', owned_by: 'openai' },
-              ],
-              modelsError: null
-            })
-            return
-          }
+            const startTime = Date.now()
 
-          set({ isLoadingModels: true, modelsError: null })
-          
-          try {
-            const response = await fetch('/api/models', {
-              headers: {
-                'Authorization': `Bearer ${apiKey}`,
-              },
-            })
+            try {
+              const controller = new AbortController()
+              set({ abortController: controller })
 
-            const data = await response.json()
+              const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  messages: messagesToSend,
+                  apiKey,
+                  model,
+                  reasoningEffort,
+                  stream: true,
+                }),
+                signal: controller.signal,
+              })
 
-            if (!response.ok) {
-              throw new Error(data.error || 'Failed to fetch models')
+              if (!response.ok) {
+                const errorData = await response.json()
+                if (errorData.unsupportedModel) {
+                  // Remove the last user message
+                  set(state => ({
+                    messages: state.messages.slice(0, -1),
+                    unsupportedModelError: errorData.error,
+                    isLoading: false
+                  }))
+                  return
+                }
+                throw new Error(errorData.error || 'Failed to get response')
+              }
+
+              // Handle streaming response
+              if (response.body) {
+                set({ isStreaming: true, isLoading: false })
+                const reader = response.body.getReader()
+                const decoder = new TextDecoder()
+                let fullResponse = ''
+                let usage = null
+                const responseTime = Date.now() - startTime
+
+                try {
+                  while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) break
+                    
+                    const chunk = decoder.decode(value, { stream: true })
+                    const lines = chunk.split('\n')
+                    
+                    for (const line of lines) {
+                      if (line.startsWith('data: ')) {
+                        const data = line.slice(6)
+                        if (data === '[DONE]') {
+                          break
+                        }
+                        
+                        try {
+                          const parsed = JSON.parse(data)
+                          
+                          if (parsed.error) {
+                            if (parsed.unsupportedModel) {
+                              // Remove the last user message
+                              set(state => ({
+                                messages: state.messages.slice(0, -1),
+                                unsupportedModelError: parsed.error,
+                                isStreaming: false,
+                                streamingMessage: '',
+                                isLoading: false
+                              }))
+                              return
+                            }
+                            throw new Error(parsed.error)
+                          }
+                          
+                          if (parsed.choices?.[0]?.delta?.content) {
+                            fullResponse += parsed.choices[0].delta.content
+                            set({ streamingMessage: fullResponse })
+                          }
+                          if (parsed.usage) {
+                            usage = parsed.usage
+                          }
+                        } catch (e: any) {
+                          if (e.message !== 'Unexpected end of JSON input') {
+                            console.error('JSON parse error:', e)
+                          }
+                        }
+                      }
+                    }
+                  }
+                } catch (error: any) {
+                  if (error.name === 'AbortError') {
+                    // Stream was cancelled - stopStreaming() already handled saving the partial message
+                    return
+                  }
+                  throw error
+                }
+
+                // Debug info for assistant response
+                const assistantDebugInfo = devMode ? {
+                  receivedFromAPI: {
+                    model,
+                    response: fullResponse,
+                    usage,
+                    timestamp: new Date().toISOString(),
+                    responseTime,
+                  }
+                } : undefined
+
+                // Add the complete AI message
+                get().addMessage(fullResponse, false, assistantDebugInfo)
+                set({ isStreaming: false, streamingMessage: '' })
+              }
+            } catch (error: any) {
+              console.error('Chat error:', error)
+              if (error.name !== 'AbortError') {
+                set({ 
+                  error: error?.message || 'An error occurred while sending the message',
+                  isStreaming: false,
+                  streamingMessage: ''
+                })
+              }
+            } finally {
+              set({ 
+                isLoading: false,
+                abortController: null
+              })
+            }
+          },
+
+          fetchModels: async () => {
+            const apiKey = localStorage.getItem('openai_api_key')
+            if (!apiKey) {
+              // Set default models if no API key
+              set({
+                models: [
+                  { id: 'gpt-4o-mini', name: 'gpt-4o-mini', owned_by: 'openai' },
+                  { id: 'gpt-4o', name: 'gpt-4o', owned_by: 'openai' },
+                  { id: 'gpt-4-turbo', name: 'gpt-4-turbo', owned_by: 'openai' },
+                  { id: 'gpt-3.5-turbo', name: 'gpt-3.5-turbo', owned_by: 'openai' },
+                ],
+                modelsError: null
+              })
+              return
             }
 
-            set({ models: data.models, isLoadingModels: false })
-          } catch (error) {
-            const errorMessage = (error as any)?.message || 'Failed to fetch models'
-            set({ 
-              modelsError: errorMessage,
-              isLoadingModels: false,
-              // Set default models on error
-              models: [
-                { id: 'gpt-4o-mini', name: 'gpt-4o-mini', owned_by: 'openai' },
-                { id: 'gpt-4o', name: 'gpt-4o', owned_by: 'openai' },
-                { id: 'gpt-4-turbo', name: 'gpt-4-turbo', owned_by: 'openai' },
-                { id: 'gpt-3.5-turbo', name: 'gpt-3.5-turbo', owned_by: 'openai' },
-              ]
-            })
-          }
-                 },
+            set({ isLoadingModels: true, modelsError: null })
+            
+            try {
+              const response = await fetch('/api/models', {
+                headers: {
+                  'Authorization': `Bearer ${apiKey}`,
+                },
+              })
 
-         getAvailablePresets: () => {
-           const { models } = get()
-           // Solo devuelve los presets que están disponibles en la API
-           return MODEL_PRESETS.filter(preset => 
-             models.some(model => model.id === preset.id)
-           )
-         },
+              const data = await response.json()
 
-         getOtherModels: () => {
-           const { models } = get()
-           const presetIds = MODEL_PRESETS.map(preset => preset.id)
-           // Devuelve todos los modelos excepto los que están en los presets Y los excluidos
-           return models.filter(model => 
-             !presetIds.includes(model.id) && 
-             !EXCLUDED_MODELS.includes(model.id)
-           )
-         },
+              if (!response.ok) {
+                throw new Error(data.error || 'Failed to fetch models')
+              }
 
-         setReasoningEffort: (effort: ReasoningEffort) => {
-           set({ reasoningEffort: effort })
-         },
+              set({ models: data.models, isLoadingModels: false })
+            } catch (error) {
+              const errorMessage = (error as any)?.message || 'Failed to fetch models'
+              set({ 
+                modelsError: errorMessage,
+                isLoadingModels: false,
+                // Set default models on error
+                models: [
+                  { id: 'gpt-4o-mini', name: 'gpt-4o-mini', owned_by: 'openai' },
+                  { id: 'gpt-4o', name: 'gpt-4o', owned_by: 'openai' },
+                  { id: 'gpt-4-turbo', name: 'gpt-4-turbo', owned_by: 'openai' },
+                  { id: 'gpt-3.5-turbo', name: 'gpt-3.5-turbo', owned_by: 'openai' },
+                ]
+              })
+            }
+          },
 
-                   shouldShowReasoningSelector: () => {
+          getAvailablePresets: () => {
+            const { models } = get()
+            // Solo devuelve los presets que están disponibles en la API
+            return MODEL_PRESETS.filter(preset => 
+              models.some(model => model.id === preset.id)
+            )
+          },
+
+          getOtherModels: () => {
+            const { models } = get()
+            const presetIds = MODEL_PRESETS.map(preset => preset.id)
+            // Devuelve todos los modelos excepto los que están en los presets Y los excluidos
+            return models.filter(model => 
+              !presetIds.includes(model.id) && 
+              !EXCLUDED_MODELS.includes(model.id)
+            )
+          },
+
+          setReasoningEffort: (effort: ReasoningEffort) => {
+            set({ reasoningEffort: effort })
+          },
+
+          shouldShowReasoningSelector: () => {
             const { selectedModel, getOtherModels } = get()
             // Mostrar para modelos de reasoning específicos o modelos "otros"
             const otherModels = getOtherModels()
@@ -595,39 +700,47 @@ export const useChatStore = create<ChatState>()(
 
           setDevMode: (devMode: boolean) => {
             set({ devMode })
-          }
-      }
-    },
-    {
-      name: 'chat-storage',
-      partialize: (state) => ({
-        chats: state.chats,
-        currentChatId: state.currentChatId,
-        messages: state.messages,
-        reasoningEffort: state.reasoningEffort,
-        devMode: state.devMode,
-      }),
-      version: 3,
-      migrate: (persistedState: any, version: number) => {
-        if (version < 2) {
-          if (persistedState && persistedState.chats) {
-            persistedState.chats = persistedState.chats.map((chat: any) => ({
-              ...chat,
-              model: 'gpt-4o-mini',
-              reasoningEffort: 'no-reasoning',
-            }))
-          }
-          if (persistedState) {
-            persistedState.reasoningEffort = 'no-reasoning'
+          },
+
+          isReasoningModel: (modelId?: string) => {
+            const model = modelId || get().selectedModel
+            const reasoningModels = ['o1', 'o1-preview', 'o1-mini', 'o3', 'o3-pro', 'o4-mini']
+            return reasoningModels.some(rm => model.includes(rm))
           }
         }
-        if (version < 3) {
-          if (persistedState) {
-            persistedState.devMode = false
-          }
-        }
-        return persistedState
       },
-    }
+      {
+        name: 'chat-storage',
+        partialize: (state) => ({
+          chats: state.chats,
+          currentChatId: state.currentChatId,
+          messages: state.messages,
+          reasoningEffort: state.reasoningEffort,
+          devMode: state.devMode,
+        }),
+        version: 3,
+        migrate: (persistedState: any, version: number) => {
+          if (version < 2) {
+            if (persistedState && persistedState.chats) {
+              persistedState.chats = persistedState.chats.map((chat: any) => ({
+                ...chat,
+                model: 'gpt-4o-mini',
+                reasoningEffort: 'no-reasoning',
+              }))
+            }
+            if (persistedState) {
+              persistedState.reasoningEffort = 'no-reasoning'
+            }
+          }
+          if (version < 3) {
+            if (persistedState) {
+              persistedState.devMode = false
+            }
+          }
+          return persistedState
+        },
+      }
+    ),
+    { name: 'chat-store' }
   )
 )

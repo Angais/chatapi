@@ -1,8 +1,23 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { useChatStore } from '@/stores/chat-store'
 
 export function TypingIndicator() {
+  const { isReasoningModel, selectedModel, getOtherModels } = useChatStore()
+  const otherModels = getOtherModels()
+  
+  // Determine if the current model is a reasoning model or in "all models"
+  const isReasoning = isReasoningModel(selectedModel)
+  const isInAllModels = otherModels.some(model => model.id === selectedModel)
+  
+  // For non-reasoning models that are not in "all models", don't show the indicator
+  if (!isReasoning && !isInAllModels) {
+    return null
+  }
+
+  const displayText = isReasoning || isInAllModels ? 'Thinking' : 'typing'
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -16,7 +31,7 @@ export function TypingIndicator() {
           <div className="max-w-[75%] flex flex-col items-start">
             <div className="px-4 py-3 rounded-2xl bg-transparent">
               <div className="flex items-center gap-1 select-none">
-                <span className="text-sm text-muted-foreground">typing</span>
+                <span className="text-sm text-muted-foreground">{displayText}</span>
                 <div className="flex gap-1 ml-2">
                   {[0, 1, 2].map((i) => (
                     <motion.div

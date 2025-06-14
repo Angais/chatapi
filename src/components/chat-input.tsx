@@ -2,14 +2,15 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Send } from 'lucide-react'
+import { Send, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useChatStore } from '@/stores/chat-store'
 
 export function ChatInput() {
   const [message, setMessage] = useState('')
+  const [previousMessage, setPreviousMessage] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { sendMessage, isLoading } = useChatStore()
+  const { sendMessage, isLoading, isStreaming, stopStreaming, error } = useChatStore()
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -18,19 +19,40 @@ export function ChatInput() {
     }
   }, [message])
 
-  const handleSubmit = async () => {
-    if (message.trim() && !isLoading) {
-      await sendMessage(message.trim())
-      setMessage('')
+  // Restore previous message if there's an error
+  useEffect(() => {
+    if (error && previousMessage && !message) {
+      setMessage(previousMessage)
+      setPreviousMessage('')
     }
+  }, [error, previousMessage, message])
+
+  const handleSubmit = async () => {
+    if (message.trim() && !isLoading && !isStreaming) {
+      const messageToSend = message.trim()
+      setPreviousMessage(messageToSend)
+      setMessage('')
+      await sendMessage(messageToSend)
+      setPreviousMessage('')
+    }
+  }
+
+  const handleStop = () => {
+    stopStreaming()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSubmit()
+      if (isStreaming || isLoading) {
+        handleStop()
+      } else {
+        handleSubmit()
+      }
     }
   }
+
+  const isDisabled = (!message.trim() && !isStreaming && !isLoading) || (!isStreaming && !isLoading && !message.trim())
 
   return (
     <motion.div
@@ -57,18 +79,29 @@ export function ChatInput() {
                   maxHeight: '200px'
                 }}
                 rows={1}
-                disabled={isLoading}
+                disabled={isLoading && !isStreaming}
               />
             </div>
 
-            {/* Send button */}
+            {/* Send/Stop button */}
             <Button
               size="icon"
-              className="flex-shrink-0 h-8 w-8"
-              disabled={!message.trim() || isLoading}
-              onClick={handleSubmit}
+              className={`flex-shrink-0 h-8 w-8 ${isStreaming || isLoading ? 'bg-red-600 hover:bg-red-700 text-white' : ''}`}
+              disabled={isDisabled}
+              onClick={isStreaming || isLoading ? handleStop : handleSubmit}
             >
-              <Send className="h-4 w-4" />
+              <motion.div
+                key={isStreaming || isLoading ? 'stop' : 'send'}
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.2 }}
+              >
+                {isStreaming || isLoading ? (
+                  <Square className="h-4 w-4" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </motion.div>
             </Button>
           </div>
         </div>
@@ -84,7 +117,11 @@ export function ChatInput() {
             transition={{ delay: 0.2 }}
             className="text-xs text-muted-foreground text-center select-none"
           >
-            Press Enter to send, Shift + Enter for new line
+            {isStreaming || isLoading ? (
+              "Press Enter or click Stop to cancel"
+            ) : (
+              "Press Enter to send, Shift + Enter for new line"
+            )}
           </motion.p>
         </div>
       </div>

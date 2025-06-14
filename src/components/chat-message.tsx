@@ -16,6 +16,22 @@ interface ChatMessageProps {
   isUser: boolean
   timestamp?: string
   message?: Message
+  isStreaming?: boolean
+}
+
+// Componente para el cursor parpadeante
+function StreamingCursor() {
+  return (
+    <motion.span
+      animate={{ opacity: [1, 0] }}
+      transition={{
+        duration: 0.8,
+        repeat: Infinity,
+        ease: "linear"
+      }}
+      className="inline-block w-2 h-5 bg-foreground ml-0.5 -mb-1"
+    />
+  )
 }
 
 function CodeBlock({ children, className }: { children: string; className?: string }) {
@@ -116,7 +132,7 @@ function CodeBlock({ children, className }: { children: string; className?: stri
   )
 }
 
-export function ChatMessage({ content, isUser, timestamp, message }: ChatMessageProps) {
+export function ChatMessage({ content, isUser, timestamp, message, isStreaming = false }: ChatMessageProps) {
   const [showCopyButton, setShowCopyButton] = useState(false)
   const [showDevModal, setShowDevModal] = useState(false)
   const { devMode } = useChatStore()
@@ -169,46 +185,57 @@ export function ChatMessage({ content, isUser, timestamp, message }: ChatMessage
                   {isUser ? (
                     <span className="whitespace-pre-wrap break-words">{content}</span>
                   ) : (
-                    <ReactMarkdown
-                      components={{
-                        code: ({ node, className, children, ...props }) => {
-                          const match = /language-(\w+)/.exec(className || '')
-                          return match ? (
-                            <CodeBlock className={className}>
-                              {String(children).replace(/\n$/, '')}
-                            </CodeBlock>
-                          ) : (
-                            <code 
-                              className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-all"
-                              {...props}
-                            >
-                              {children}
-                            </code>
-                          )
-                        },
-                        pre: ({ children }) => <>{children}</>,
-                        h1: ({ children }) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
-                        h2: ({ children }) => <h2 className="text-lg font-bold mb-2">{children}</h2>,
-                        h3: ({ children }) => <h3 className="text-base font-bold mb-2">{children}</h3>,
-                        ul: ({ children }) => <ul className="list-disc list-inside space-y-1 ml-4">{children}</ul>,
-                        ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 ml-4">{children}</ol>,
-                        li: ({ children }) => <li className="text-base">{children}</li>,
-                        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                        strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-                        em: ({ children }) => <em className="italic">{children}</em>,
-                        blockquote: ({ children }) => (
-                          <blockquote className="border-l-4 border-muted pl-4 italic">{children}</blockquote>
-                        ),
-                      }}
-                    >
-                      {content}
-                    </ReactMarkdown>
+                    <div className="w-full">
+                      {isStreaming ? (
+                        // Para streaming, renderizar como texto plano con cursor al final
+                        <div className="whitespace-pre-wrap break-words">
+                          {content}
+                          <StreamingCursor />
+                        </div>
+                      ) : (
+                        // Para mensajes completos, usar ReactMarkdown
+                        <ReactMarkdown
+                          components={{
+                            code: ({ node, className, children, ...props }) => {
+                              const match = /language-(\w+)/.exec(className || '')
+                              return match ? (
+                                <CodeBlock className={className}>
+                                  {String(children).replace(/\n$/, '')}
+                                </CodeBlock>
+                              ) : (
+                                <code 
+                                  className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-all"
+                                  {...props}
+                                >
+                                  {children}
+                                </code>
+                              )
+                            },
+                            pre: ({ children }) => <>{children}</>,
+                            h1: ({ children }) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
+                            h2: ({ children }) => <h2 className="text-lg font-bold mb-2">{children}</h2>,
+                            h3: ({ children }) => <h3 className="text-base font-bold mb-2">{children}</h3>,
+                            ul: ({ children }) => <ul className="list-disc list-inside space-y-1 ml-4">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 ml-4">{children}</ol>,
+                            li: ({ children }) => <li className="text-base">{children}</li>,
+                            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                            strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                            em: ({ children }) => <em className="italic">{children}</em>,
+                            blockquote: ({ children }) => (
+                              <blockquote className="border-l-4 border-muted pl-4 italic">{children}</blockquote>
+                            ),
+                          }}
+                        >
+                          {content}
+                        </ReactMarkdown>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
 
               {/* Actions for AI messages */}
-              {!isUser && (
+              {!isUser && !isStreaming && (
                 <div className="flex items-center gap-1 mt-2 animate-in fade-in duration-200">
                   <Button
                     variant="ghost"
