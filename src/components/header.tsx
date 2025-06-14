@@ -1,12 +1,17 @@
 'use client'
 
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Search, Plus, Settings, Sun, Moon, Monitor } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTheme } from '@/hooks/use-theme'
+import { SettingsModal } from '@/components/settings-modal'
+import { useChatStore } from '@/stores/chat-store'
 
 export function Header() {
   const { theme, setTheme, actualTheme } = useTheme()
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const { clearMessages } = useChatStore()
 
   const getThemeIcon = () => {
     switch (theme) {
@@ -41,6 +46,8 @@ export function Header() {
           <Button
             variant="ghost"
             size="icon"
+            onClick={clearMessages}
+            title="New chat"
           >
             <Plus className="h-4 w-4" />
           </Button>
@@ -72,11 +79,17 @@ export function Header() {
           <Button
             variant="ghost"
             size="icon"
+            onClick={() => setSettingsOpen(true)}
           >
             <Settings className="h-4 w-4" />
           </Button>
         </motion.div>
       </div>
+      
+      <SettingsModal 
+        open={settingsOpen} 
+        onOpenChange={setSettingsOpen} 
+      />
     </motion.header>
   )
 } 
