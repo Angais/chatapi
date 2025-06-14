@@ -42,7 +42,7 @@ export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+      className="fixed top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
     >
       <div className="w-full flex h-14 items-center justify-between px-4">
         {/* Lado izquierdo - Menu + Nombre + Nuevo chat */}

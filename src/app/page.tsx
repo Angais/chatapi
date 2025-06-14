@@ -36,10 +36,10 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col h-screen bg-background">
       <Header onToggleSidebar={toggleSidebar} isSidebarOpen={isSidebarOpen} />
       
-      <div className="flex flex-1 relative">
+      <div className="flex flex-1 relative pt-14">
         {/* Sidebar */}
         <ChatHistory isOpen={isSidebarOpen} />
         
