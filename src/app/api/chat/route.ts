@@ -45,17 +45,26 @@ export async function POST(request: NextRequest) {
           message: responseMessage,
           usage: completion.usage,
         })
-      } catch (initialError: any) {
-        // If we get a parameter error, it might be a reasoning model, try with reasoning parameters
-        if (initialError?.status === 400 && 
-            initialError?.message?.includes("'max_tokens' is not supported")) {
-          
-          console.log(`Model ${selectedModel} requires reasoning parameters, retrying...`)
-          // Fall through to reasoning model logic
-        } else {
-          throw initialError
+              } catch (initialError: any) {
+          // If we get a parameter error, it might be a reasoning model, try with reasoning parameters
+          if (initialError?.status === 400 && 
+              initialError?.message?.includes("'max_tokens' is not supported")) {
+            
+            console.log(`Model ${selectedModel} requires reasoning parameters, retrying...`)
+            // Fall through to reasoning model logic
+          } else if (initialError?.status === 400 || initialError?.status === 404 || initialError?.status === 403) {
+            // Treat as unsupported model error
+            return NextResponse.json(
+              { 
+                error: 'This model is not supported',
+                unsupportedModel: true 
+              },
+              { status: 400 }
+            )
+          } else {
+            throw initialError
+          }
         }
-      }
     }
 
     // Use reasoning model parameters
@@ -115,18 +124,40 @@ export async function POST(request: NextRequest) {
             max_tokens: 1000,
           }
 
-          const standardCompletion = await openai.chat.completions.create(standardParams)
-          const standardMessage = standardCompletion.choices[0]?.message?.content || ''
+          try {
+            const standardCompletion = await openai.chat.completions.create(standardParams)
+            const standardMessage = standardCompletion.choices[0]?.message?.content || ''
 
-          return NextResponse.json({
-            message: standardMessage,
-            usage: standardCompletion.usage,
-            reasoningNotSupported: true,
-          })
+            return NextResponse.json({
+              message: standardMessage,
+              usage: standardCompletion.usage,
+              reasoningNotSupported: true,
+            })
+          } catch (standardError: any) {
+            // If all fallbacks fail, this is an unsupported model error
+            return NextResponse.json(
+              { 
+                error: 'This model is not supported',
+                unsupportedModel: true 
+              },
+              { status: 400 }
+            )
+          }
         }
       }
       
-      // If it's a different error, throw it
+      // For other 400/404/403 errors that are not reasoning-related, treat as unsupported model
+      if (reasoningError?.status === 400 || reasoningError?.status === 404 || reasoningError?.status === 403) {
+        return NextResponse.json(
+          { 
+            error: 'This model is not supported',
+            unsupportedModel: true 
+          },  
+          { status: 400 }
+        )
+      }
+      
+      // If it's a different error (not 400), throw it
       throw reasoningError
     }
   } catch (error) {

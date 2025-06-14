@@ -57,6 +57,45 @@ export const MODEL_PRESETS = [
 // Modelos que soportan reasoning effort
 export const REASONING_MODELS = ['o3', 'o3-pro', 'o4-mini']
 
+// Modelos que deben ser excluidos de la lista (nunca mostrar)
+export const EXCLUDED_MODELS = [
+  'codex-mini-latest',
+  'gpt-4o-realtime-preview-2025-06-03',
+  'gpt-4o-audio-preview-2025-06-03',
+  'dall-e-3',
+  'dall-e-2',
+  'tts-1-hd',
+  'tts-1-1106',
+  'tts-1-hd-1106',
+  'text-embedding-3-small',
+  'text-embedding-3-large',
+  'gpt-4o-realtime-preview-2024-10-01',
+  'gpt-4o-audio-preview-2024-10-01',
+  'gpt-4o-audio-preview',
+  'gpt-4o-realtime-preview',
+  'omni-moderation-latest',
+  'omni-moderation-2024-09-26',
+  'gpt-4o-realtime-preview-2024-12-17',
+  'gpt-4o-audio-preview-2024-12-17',
+  'gpt-4o-mini-realtime-preview-2024-12-17',
+  'gpt-4o-mini-audio-preview-2024-12-17',
+  'gpt-4o-mini-realtime-preview',
+  'gpt-4o-mini-audio-preview',
+  'gpt-4o-search-preview-2025-03-11',
+  'gpt-4o-search-preview',
+  'gpt-4o-mini-search-preview-2025-03-11',
+  'gpt-4o-mini-search-preview',
+  'gpt-4o-transcribe',
+  'gpt-4o-mini-transcribe',
+  'gpt-4o-mini-tts',
+  'gpt-image-1',
+  'tts-1',
+  'whisper-1',
+  'text-embedding-ada-002',
+  'davinci-002',
+  'babbage-002'
+]
+
 export interface Chat {
   id: string
   title: string
@@ -87,11 +126,15 @@ interface ChatState {
   // Dev Mode state
   devMode: boolean
   
+  // Unsupported model state
+  unsupportedModelError: string | null
+  
   // Actions
   init: () => void
   addMessage: (content: string, isUser: boolean, debugInfo?: any) => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
+  setUnsupportedModelError: (error: string | null) => void
   clearMessages: () => void
   sendMessage: (content: string) => Promise<void>
   fetchModels: () => Promise<void>
@@ -163,6 +206,7 @@ export const useChatStore = create<ChatState>()(
         modelsError: null,
         reasoningEffort: 'no-reasoning',
         devMode: false,
+        unsupportedModelError: null,
 
         init: () => {
           const state = get()
@@ -237,7 +281,9 @@ export const useChatStore = create<ChatState>()(
         
         setError: (error: string | null) => set({ error }),
 
-        clearMessages: () => set({ messages: [], error: null }),
+        setUnsupportedModelError: (error: string | null) => set({ unsupportedModelError: error }),
+
+        clearMessages: () => set({ messages: [], error: null, unsupportedModelError: null }),
 
         createNewChat: () => {
           const state = get()
@@ -255,6 +301,7 @@ export const useChatStore = create<ChatState>()(
             currentChatId: null,
             messages: [],
             error: null,
+            unsupportedModelError: null,
             selectedModel: preferredModel,
             reasoningEffort: defaultReasoningEffort,
           })
@@ -272,6 +319,7 @@ export const useChatStore = create<ChatState>()(
               currentChatId: chatId,
               messages: chatToLoad.messages,
               error: null,
+              unsupportedModelError: null,
               selectedModel: chatToLoad.model || 'gpt-4o-mini',
               reasoningEffort: chatToLoad.reasoningEffort || get().getDefaultReasoningEffort(chatToLoad.model || 'gpt-4o-mini'),
             })
@@ -291,6 +339,7 @@ export const useChatStore = create<ChatState>()(
                 currentChatId: null,
                 messages: [],
                 error: null,
+                unsupportedModelError: null,
                 selectedModel: preferredModel,     
                 reasoningEffort: defaultReasoningEffort,
               }
@@ -373,7 +422,7 @@ export const useChatStore = create<ChatState>()(
 
           // Add user message with debug info
           get().addMessage(content, true, userDebugInfo)
-          set({ isLoading: true, error: null })
+          set({ isLoading: true, error: null, unsupportedModelError: null })
 
           const startTime = Date.now()
 
@@ -395,6 +444,16 @@ export const useChatStore = create<ChatState>()(
             const responseTime = Date.now() - startTime
 
             if (!response.ok) {
+              // Check if it's an unsupported model error
+              if (data.unsupportedModel) {
+                // Remove the last user message
+                set(state => ({
+                  messages: state.messages.slice(0, -1),
+                  unsupportedModelError: data.error,
+                  isLoading: false
+                }))
+                return
+              }
               throw new Error(data.error || 'Failed to get response')
             }
 
@@ -499,8 +558,11 @@ export const useChatStore = create<ChatState>()(
          getOtherModels: () => {
            const { models } = get()
            const presetIds = MODEL_PRESETS.map(preset => preset.id)
-           // Devuelve todos los modelos excepto los que están en los presets
-           return models.filter(model => !presetIds.includes(model.id))
+           // Devuelve todos los modelos excepto los que están en los presets Y los excluidos
+           return models.filter(model => 
+             !presetIds.includes(model.id) && 
+             !EXCLUDED_MODELS.includes(model.id)
+           )
          },
 
          setReasoningEffort: (effort: ReasoningEffort) => {

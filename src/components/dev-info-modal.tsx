@@ -32,7 +32,7 @@ export function DevInfoModal({ message, open, onOpenChange }: DevInfoModalProps)
   }
 
   const CodeBlock = ({ title, content, section }: { title: string; content: string; section: string }) => (
-    <div className="space-y-2">
+    <div className="space-y-2 min-w-0">
       <div className="flex items-center justify-between">
         <h4 className="font-medium text-sm">{title}</h4>
         <Button
@@ -45,15 +45,17 @@ export function DevInfoModal({ message, open, onOpenChange }: DevInfoModalProps)
           {copiedSection === section ? 'Copied!' : 'Copy'}
         </Button>
       </div>
-      <pre className="bg-muted p-3 rounded-lg text-xs overflow-auto max-h-60 custom-scrollbar">
-        <code>{content}</code>
-      </pre>
+      <div className="w-full max-w-[550px]">
+        <pre className="bg-muted p-3 rounded-lg text-xs overflow-x-auto overflow-y-auto max-h-60 w-full custom-scrollbar">
+          <code className="whitespace-pre">{content}</code>
+        </pre>
+      </div>
     </div>
   )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-auto">
+      <DialogContent className="sm:max-w-[600px] w-full max-h-[80vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Info className="w-4 h-4" />

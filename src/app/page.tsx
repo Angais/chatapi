@@ -8,6 +8,7 @@ import { ChatInput } from '@/components/chat-input'
 import { TypingIndicator } from '@/components/typing-indicator'
 import { EmptyState } from '@/components/empty-state'
 import { ChatHistory } from '@/components/chat-history'
+import { UnsupportedModelDisclaimer } from '@/components/unsupported-model-disclaimer'
 import { useChatStore } from '@/stores/chat-store'
 import { AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -92,6 +93,7 @@ export default function ChatPage() {
             </motion.div>
           )}
           
+          <UnsupportedModelDisclaimer />
           <ChatInput />
         </main>
       </div>
