@@ -18,13 +18,8 @@ export async function GET(request: NextRequest) {
 
     const models = await openai.models.list()
     
-    // Filter to show only chat completion models and sort them
+    // Sort models by priority and return all available models
     const chatModels = models.data
-      .filter(model => 
-        model.id.includes('gpt') || 
-        model.id.includes('o1') ||
-        model.id.includes('chatgpt')
-      )
       .sort((a, b) => {
         // Prioritize GPT-4 models, then GPT-3.5, then others
         const priority = (id: string) => {
