@@ -23,18 +23,46 @@ export async function POST(request: NextRequest) {
       apiKey: apiKey,
     })
 
-    const completion = await openai.chat.completions.create({
-      model: model || 'gpt-4o-mini',
-      messages: messages,
-      temperature: 0.7,
-      max_tokens: 1000,
-    })
+    const selectedModel = model || 'gpt-4o-mini'
 
-    const responseMessage = completion.choices[0]?.message?.content || ''
+    // Try with standard parameters first
+    try {
+      const completion = await openai.chat.completions.create({
+        model: selectedModel,
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 1000,
+      })
 
-    return NextResponse.json({
-      message: responseMessage,
-    })
+      const responseMessage = completion.choices[0]?.message?.content || ''
+
+      return NextResponse.json({
+        message: responseMessage,
+      })
+    } catch (initialError: any) {
+      // If we get a parameter error, try with reasoning model parameters
+      if (initialError?.status === 400 && 
+          initialError?.message?.includes("'max_tokens' is not supported")) {
+        
+        console.log(`Model ${selectedModel} requires reasoning parameters, retrying...`)
+        
+        const completion = await openai.chat.completions.create({
+          model: selectedModel,
+          messages: messages,
+          max_completion_tokens: 1000,
+          // Reasoning models don't support temperature, top_p, etc.
+        })
+
+        const responseMessage = completion.choices[0]?.message?.content || ''
+
+        return NextResponse.json({
+          message: responseMessage,
+        })
+      }
+      
+      // If it's a different error, throw it to be handled below
+      throw initialError
+    }
   } catch (error) {
     console.error('OpenAI API error:', error)
     

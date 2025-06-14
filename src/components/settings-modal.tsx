@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { useChatStore } from '@/stores/chat-store'
 
 interface Model {
   id: string
@@ -35,11 +36,11 @@ interface SettingsModalProps {
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [apiKey, setApiKey] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
-  const [models, setModels] = useState<Model[]>([])
   const [showApiKey, setShowApiKey] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const [isLoadingModels, setIsLoadingModels] = useState(false)
-  const [modelsError, setModelsError] = useState('')
+  
+  // Use models from the store instead of local state
+  const { models, isLoadingModels, modelsError, fetchModels } = useChatStore()
 
   useEffect(() => {
     // Load API key and model from localStorage when modal opens
@@ -48,46 +49,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       const storedModel = localStorage.getItem('openai_model') || 'gpt-4o-mini'
       setApiKey(storedKey)
       setSelectedModel(storedModel)
-      
-      // Fetch models if API key exists
-      if (storedKey) {
-        fetchModels(storedKey)
-      }
     }
   }, [open])
-
-  const fetchModels = async (key: string) => {
-    setIsLoadingModels(true)
-    setModelsError('')
-    
-    try {
-      const response = await fetch('/api/models', {
-        headers: {
-          'Authorization': `Bearer ${key}`,
-        },
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch models')
-      }
-
-      setModels(data.models)
-    } catch (error) {
-      const errorObj = error as any
-      setModelsError(errorObj?.message || 'Failed to fetch models')
-      // Set some default models if fetch fails
-      setModels([
-        { id: 'gpt-4o-mini', name: 'gpt-4o-mini', owned_by: 'openai' },
-        { id: 'gpt-4o', name: 'gpt-4o', owned_by: 'openai' },
-        { id: 'gpt-4-turbo', name: 'gpt-4-turbo', owned_by: 'openai' },
-        { id: 'gpt-3.5-turbo', name: 'gpt-3.5-turbo', owned_by: 'openai' },
-      ])
-    } finally {
-      setIsLoadingModels(false)
-    }
-  }
 
   const handleSave = async () => {
     setIsSaving(true)
@@ -104,6 +67,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         localStorage.setItem('openai_model', selectedModel)
       }
       
+      // Refetch models if API key changed
+      await fetchModels()
+      
       // Close modal after short delay
       setTimeout(() => {
         onOpenChange(false)
@@ -117,19 +83,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   const handleApiKeyChange = (value: string) => {
     setApiKey(value)
-    // Clear models when API key changes
-    if (!value.trim()) {
-      setModels([])
-      setModelsError('')
-    }
   }
 
   const handleLoadModels = () => {
-    if (apiKey.trim()) {
-      fetchModels(apiKey.trim())
-    }
+    fetchModels()
   }
-
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -175,23 +133,22 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           <div className="grid gap-2">
             <div className="flex items-center justify-between">
               <Label htmlFor="model">Model</Label>
-              {apiKey && !models.length && !isLoadingModels && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleLoadModels}
-                  className="h-8 text-xs"
-                >
-                  Load Models
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleLoadModels}
+                className="h-8 text-xs"
+                disabled={isLoadingModels}
+              >
+                {isLoadingModels ? 'Loading...' : 'Refresh Models'}
+              </Button>
             </div>
             
             <Select
               value={selectedModel}
               onValueChange={setSelectedModel}
-              disabled={!models.length || isLoadingModels}
+              disabled={isLoadingModels}
             >
               <SelectTrigger>
                 <SelectValue 
@@ -200,7 +157,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       ? "Loading models..." 
                       : models.length 
                         ? "Select a model" 
-                        : "Enter API key to load models"
+                        : "No models available"
                   }
                 />
               </SelectTrigger>

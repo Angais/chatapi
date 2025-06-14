@@ -11,7 +11,7 @@ import { useChatStore } from '@/stores/chat-store'
 import { AlertCircle } from 'lucide-react'
 
 export default function ChatPage() {
-  const { messages, isLoading, error } = useChatStore()
+  const { messages, isLoading, error, fetchModels } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -21,6 +21,11 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom()
   }, [messages, isLoading])
+
+  // Fetch models on page load
+  useEffect(() => {
+    fetchModels()
+  }, [fetchModels])
 
   return (
     <div className="flex flex-col min-h-screen bg-background">

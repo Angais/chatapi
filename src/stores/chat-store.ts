@@ -7,21 +7,34 @@ export interface Message {
   timestamp: string
 }
 
+interface Model {
+  id: string
+  name: string
+  owned_by: string
+}
+
 interface ChatState {
   messages: Message[]
   isLoading: boolean
   error: string | null
+  models: Model[]
+  isLoadingModels: boolean
+  modelsError: string | null
   addMessage: (content: string, isUser: boolean) => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
   clearMessages: () => void
   sendMessage: (content: string) => Promise<void>
+  fetchModels: () => Promise<void>
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   isLoading: false,
   error: null,
+  models: [],
+  isLoadingModels: false,
+  modelsError: null,
 
   addMessage: (content: string, isUser: boolean) => {
     const newMessage: Message = {
@@ -94,4 +107,52 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ isLoading: false })
     }
   },
+
+  fetchModels: async () => {
+    const apiKey = localStorage.getItem('openai_api_key')
+    if (!apiKey) {
+      // Set default models if no API key
+      set({
+        models: [
+          { id: 'gpt-4o-mini', name: 'gpt-4o-mini', owned_by: 'openai' },
+          { id: 'gpt-4o', name: 'gpt-4o', owned_by: 'openai' },
+          { id: 'gpt-4-turbo', name: 'gpt-4-turbo', owned_by: 'openai' },
+          { id: 'gpt-3.5-turbo', name: 'gpt-3.5-turbo', owned_by: 'openai' },
+        ],
+        modelsError: null
+      })
+      return
+    }
+
+    set({ isLoadingModels: true, modelsError: null })
+    
+    try {
+      const response = await fetch('/api/models', {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch models')
+      }
+
+      set({ models: data.models, isLoadingModels: false })
+    } catch (error) {
+      const errorMessage = (error as any)?.message || 'Failed to fetch models'
+      set({ 
+        modelsError: errorMessage,
+        isLoadingModels: false,
+        // Set default models on error
+        models: [
+          { id: 'gpt-4o-mini', name: 'gpt-4o-mini', owned_by: 'openai' },
+          { id: 'gpt-4o', name: 'gpt-4o', owned_by: 'openai' },
+          { id: 'gpt-4-turbo', name: 'gpt-4-turbo', owned_by: 'openai' },
+          { id: 'gpt-3.5-turbo', name: 'gpt-3.5-turbo', owned_by: 'openai' },
+        ]
+      })
+    }
+  }
 }))
