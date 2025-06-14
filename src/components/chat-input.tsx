@@ -82,7 +82,7 @@ export function ChatInput() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.2 }}
-            className="text-xs text-muted-foreground text-center"
+            className="text-xs text-muted-foreground text-center select-none"
           >
             Press Enter to send, Shift + Enter for new line
           </motion.p>

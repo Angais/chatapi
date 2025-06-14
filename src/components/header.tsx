@@ -2,9 +2,8 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Search, Plus, Settings, Sun, Moon, Monitor, Menu } from 'lucide-react'
+import { Search, Plus, Settings, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useTheme } from '@/hooks/use-theme'
 import { SettingsModal } from '@/components/settings-modal'
 import { useChatStore } from '@/stores/chat-store'
 import { ModelSelector } from './model-selector'
@@ -15,27 +14,8 @@ interface HeaderProps {
 }
 
 export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
-  const { theme, setTheme, actualTheme } = useTheme()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const { createNewChat } = useChatStore()
-
-  const getThemeIcon = () => {
-    switch (theme) {
-      case 'light':
-        return <Sun className="h-4 w-4" />
-      case 'dark':
-        return <Moon className="h-4 w-4" />
-      default:
-        return <Monitor className="h-4 w-4" />
-    }
-  }
-
-  const cycleTheme = () => {
-    const themes: ('light' | 'dark' | 'system')[] = ['light', 'dark', 'system']
-    const currentIndex = themes.indexOf(theme)
-    const nextIndex = (currentIndex + 1) % themes.length
-    setTheme(themes[nextIndex])
-  }
 
   return (
     <motion.header
@@ -45,7 +25,7 @@ export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
       className="fixed top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
     >
       <div className="w-full flex h-14 items-center justify-between px-4">
-        {/* Lado izquierdo - Menu + Nombre + Nuevo chat */}
+        {/* Lado izquierdo - Menu + Nuevo chat + Selectores */}
         <div className="flex items-center space-x-2">
           <Button
             variant="ghost"
@@ -56,10 +36,6 @@ export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
             <Menu className="h-4 w-4" />
           </Button>
           
-          <h1 className="text-lg font-semibold">Chatapi</h1>
-          
-          <ModelSelector />
-
           <Button
             variant="ghost"
             size="icon"
@@ -68,6 +44,8 @@ export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
           >
             <Plus className="h-4 w-4" />
           </Button>
+          
+          <ModelSelector />
         </div>
 
         {/* Lado derecho - Acciones */}
@@ -82,15 +60,6 @@ export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
             size="icon"
           >
             <Search className="h-4 w-4" />
-          </Button>
-          
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={cycleTheme}
-            className="relative"
-          >
-            {getThemeIcon()}
           </Button>
           
           <Button

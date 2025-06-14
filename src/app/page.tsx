@@ -68,7 +68,7 @@ export default function ChatPage() {
                   exit={{ opacity: 0, y: -10 }}
                   className="mx-auto max-w-3xl px-4 py-2"
                 >
-                  <div className="flex items-center gap-2 rounded-lg bg-red-50 dark:bg-red-950 p-3 text-sm text-red-600 dark:text-red-400">
+                  <div className="flex items-center gap-2 rounded-lg bg-red-50 dark:bg-red-950 p-3 text-sm text-red-600 dark:text-red-400 select-none">
                     <AlertCircle className="h-4 w-4" />
                     <span>{error}</span>
                   </div>

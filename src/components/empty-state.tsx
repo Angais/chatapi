@@ -39,7 +39,7 @@ export function EmptyState() {
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ delay: 0.2, duration: 0.5 }}
-        className="text-center mb-12"
+        className="text-center mb-12 select-none"
       >
         <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mx-auto mb-6">
           <span className="text-primary-foreground font-bold text-2xl">C</span>
@@ -68,7 +68,7 @@ export function EmptyState() {
               transition: { type: "spring", stiffness: 400, damping: 17 }
             }}
             whileTap={{ scale: 0.98 }}
-            className="p-4 rounded-xl border border-border bg-card hover:bg-accent/50 cursor-pointer transition-colors group"
+            className="p-4 rounded-xl border border-border bg-card hover:bg-accent/50 cursor-pointer transition-colors group select-none"
           >
             <div className="flex items-start gap-3">
               <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary/20 transition-colors">
@@ -92,7 +92,7 @@ export function EmptyState() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 1, duration: 0.5 }}
-        className="text-xs text-muted-foreground text-center mt-8 max-w-md"
+        className="text-xs text-muted-foreground text-center mt-8 max-w-md select-none"
       >
         Click on any of the suggestions or write your own question below
       </motion.p>

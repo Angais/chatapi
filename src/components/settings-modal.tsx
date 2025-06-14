@@ -20,8 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Sun, Moon, Monitor } from 'lucide-react'
 import { useChatStore } from '@/stores/chat-store'
+import { useTheme } from '@/hooks/use-theme'
 
 interface Model {
   id: string
@@ -40,6 +41,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [isSaving, setIsSaving] = useState(false)
   
   const { fetchModels, devMode, setDevMode } = useChatStore()
+  const { theme, setTheme } = useTheme()
 
   useEffect(() => {
     // Load API key from localStorage when modal opens
@@ -78,13 +80,36 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     setApiKey(value)
   }
 
+  const getThemeIcon = (themeName: string) => {
+    const iconClass = "h-4 w-4 mr-2"
+    switch (themeName) {
+      case 'light':
+        return <Sun className={iconClass} />
+      case 'dark':
+        return <Moon className={iconClass} />
+      default:
+        return <Monitor className={iconClass} />
+    }
+  }
+
+  const getThemeLabel = (themeName: string) => {
+    switch (themeName) {
+      case 'light':
+        return 'Light'
+      case 'dark':
+        return 'Dark'
+      default:
+        return 'System'
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            Manage your OpenAI API key and development options.
+            Manage your OpenAI API key, theme and development options.
           </DialogDescription>
         </DialogHeader>
         
@@ -120,6 +145,43 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           </div>
 
           <div className="grid gap-2">
+            <Label htmlFor="theme">Theme</Label>
+            <Select value={theme} onValueChange={setTheme}>
+              <SelectTrigger>
+                <SelectValue>
+                  <div className="flex items-center">
+                    {getThemeIcon(theme)}
+                    {getThemeLabel(theme)}
+                  </div>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">
+                  <div className="flex items-center">
+                    <Sun className="h-4 w-4 mr-2" />
+                    Light
+                  </div>
+                </SelectItem>
+                <SelectItem value="dark">
+                  <div className="flex items-center">
+                    <Moon className="h-4 w-4 mr-2" />
+                    Dark
+                  </div>
+                </SelectItem>
+                <SelectItem value="system">
+                  <div className="flex items-center">
+                    <Monitor className="h-4 w-4 mr-2" />
+                    System
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">
+              Choose your preferred theme or use system default.
+            </p>
+          </div>
+
+          <div className="grid gap-2">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label htmlFor="dev-mode">Developer Mode</Label>
@@ -148,7 +210,14 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             onClick={handleSave}
             disabled={isSaving}
           >
-            {isSaving ? 'Saving...' : 'Save'}
+            {isSaving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save'
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

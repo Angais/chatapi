@@ -15,7 +15,7 @@ export function TypingIndicator() {
         <div className="flex justify-start">
           <div className="max-w-[75%] flex flex-col items-start">
             <div className="px-4 py-3 rounded-2xl bg-transparent">
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 select-none">
                 <span className="text-sm text-muted-foreground">typing</span>
                 <div className="flex gap-1 ml-2">
                   {[0, 1, 2].map((i) => (
