@@ -107,17 +107,27 @@ export interface Chat {
   reasoningEffort?: ReasoningEffort
 }
 
+// Add new interface for streaming sessions
+interface StreamingSession {
+  isStreaming: boolean
+  streamingMessage: string
+  abortController: AbortController | null
+}
+
 interface ChatState {
   // Current chat state
   currentChatId: string | null
   messages: Message[]
   isLoading: boolean
-  isStreaming: boolean
-  streamingMessage: string
-  abortController: AbortController | null
+  isStreaming: boolean // DEPRECATED - will be computed from streamingSessions
+  streamingMessage: string // DEPRECATED - will be computed from streamingSessions
+  abortController: AbortController | null // DEPRECATED - moved to streamingSessions
   error: string | null
   selectedModel: string
   reasoningEffort: ReasoningEffort
+  
+  // NEW: Track streaming sessions per chat
+  streamingSessions: Map<string, StreamingSession>
   
   // Chat history
   chats: Chat[]
@@ -140,7 +150,7 @@ interface ChatState {
   setStreaming: (streaming: boolean) => void
   setStreamingMessage: (message: string) => void
   setAbortController: (controller: AbortController | null) => void
-  stopStreaming: () => void
+  stopStreaming: (chatId?: string) => void
   setError: (error: string | null) => void
   setUnsupportedModelError: (error: string | null) => void
   clearMessages: () => void
@@ -168,6 +178,17 @@ interface ChatState {
   
   // Streaming helpers
   isReasoningModel: (modelId?: string) => boolean
+  
+  // NEW: Computed getters for current chat streaming
+  getCurrentChatStreaming: () => StreamingSession | null
+  isCurrentChatStreaming: () => boolean
+  getCurrentStreamingMessage: () => string
+  
+  // NEW: Streaming session management
+  createStreamingSession: (chatId: string) => void
+  updateStreamingSession: (chatId: string, updates: Partial<StreamingSession>) => void
+  cleanupStreamingSession: (chatId: string) => void
+  getStreamingChats: () => string[]
 }
 
 // Helper function to generate chat title from first message
@@ -210,9 +231,9 @@ export const useChatStore = create<ChatState>()(
           currentChatId: null,
           messages: [],
           isLoading: false,
-          isStreaming: false,
-          streamingMessage: '',
-          abortController: null,
+          isStreaming: false, // DEPRECATED
+          streamingMessage: '', // DEPRECATED
+          abortController: null, // DEPRECATED
           error: null,
           selectedModel: 'gpt-4o-mini',
           chats: [],
@@ -222,6 +243,7 @@ export const useChatStore = create<ChatState>()(
           reasoningEffort: 'no-reasoning',
           devMode: false,
           unsupportedModelError: null,
+          streamingSessions: new Map(), // NEW
 
           init: () => {
             const state = get()
@@ -293,35 +315,99 @@ export const useChatStore = create<ChatState>()(
           },
 
           setLoading: (loading: boolean) => set({ isLoading: loading }),
-          setStreaming: (streaming: boolean) => set({ isStreaming: streaming }),
-          setStreamingMessage: (message: string) => set({ streamingMessage: message }),
-          setAbortController: (controller: AbortController | null) => set({ abortController: controller }),
+          setStreaming: (streaming: boolean) => {
+            // Update for backward compatibility
+            const { currentChatId } = get()
+            if (currentChatId) {
+              get().updateStreamingSession(currentChatId, { isStreaming: streaming })
+            }
+          },
+          setStreamingMessage: (message: string) => {
+            // Update for backward compatibility
+            const { currentChatId } = get()
+            if (currentChatId) {
+              get().updateStreamingSession(currentChatId, { streamingMessage: message })
+            }
+          },
+          setAbortController: (controller: AbortController | null) => {
+            // Update for backward compatibility
+            const { currentChatId } = get()
+            if (currentChatId) {
+              get().updateStreamingSession(currentChatId, { abortController: controller })
+            }
+          },
           
-          stopStreaming: () => {
-            const { abortController, streamingMessage, devMode, selectedModel } = get()
-            if (abortController) {
-              abortController.abort()
+          stopStreaming: (chatId?: string) => {
+            const targetChatId = chatId || get().currentChatId
+            if (!targetChatId) return
+
+            const { streamingSessions, devMode } = get()
+            const session = streamingSessions.get(targetChatId)
+            
+            if (session?.abortController) {
+              session.abortController.abort()
               
-              // Si hay contenido parcial generado, guardarlo como mensaje completo
-              if (streamingMessage.trim()) {
+              // Find the chat to update
+              const chat = get().chats.find(c => c.id === targetChatId)
+              
+              // If there's partial content, finalize the message
+              if (session.streamingMessage.trim() && chat) {
                 const assistantDebugInfo = devMode ? {
                   receivedFromAPI: {
-                    model: selectedModel,
-                    response: streamingMessage,
+                    model: chat.model,
+                    response: session.streamingMessage,
                     timestamp: new Date().toISOString(),
                     cancelled: true,
                   }
                 } : undefined
 
-                get().addMessage(streamingMessage, false, assistantDebugInfo)
+                const finalMessage: Message = {
+                  id: Date.now().toString(),
+                  content: session.streamingMessage,
+                  isUser: false,
+                  timestamp: new Date().toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  }),
+                  debugInfo: assistantDebugInfo,
+                }
+
+                // Update both the chat in history and current messages if applicable
+                set((state) => {
+                  const updatedChats = state.chats.map(c => {
+                    if (c.id === targetChatId) {
+                      // Replace the placeholder message with the final cancelled message
+                      const updatedMessages = c.messages.map((msg, idx) => 
+                        idx === c.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai')
+                          ? finalMessage
+                          : msg
+                      )
+                      return {
+                        ...c,
+                        messages: updatedMessages,
+                        updatedAt: new Date().toISOString()
+                      }
+                    }
+                    return c
+                  })
+
+                  // If this is the current chat, also update current messages
+                  if (state.currentChatId === targetChatId) {
+                    const updatedMessages = state.messages.map((msg, idx) => 
+                      idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai')
+                        ? finalMessage
+                        : msg
+                    )
+                    return { messages: updatedMessages, chats: updatedChats }
+                  }
+
+                  return { chats: updatedChats }
+                })
               }
               
-              set({ 
-                abortController: null,
-                isStreaming: false,
-                isLoading: false,
-                streamingMessage: ''
-              })
+              // Clean up the streaming session
+              get().cleanupStreamingSession(targetChatId)
             }
           },
 
@@ -354,11 +440,12 @@ export const useChatStore = create<ChatState>()(
           loadChat: (chatId: string) => {
             const state = get()
             
-            // No need to save current chat as it's already auto-saved
-            
             // Load selected chat
             const chatToLoad = state.chats.find(chat => chat.id === chatId)
             if (chatToLoad) {
+              // Get streaming state for the new chat
+              const streamingSession = state.streamingSessions.get(chatId)
+              
               set({
                 currentChatId: chatId,
                 messages: chatToLoad.messages,
@@ -366,11 +453,18 @@ export const useChatStore = create<ChatState>()(
                 unsupportedModelError: null,
                 selectedModel: chatToLoad.model || 'gpt-4o-mini',
                 reasoningEffort: chatToLoad.reasoningEffort || get().getDefaultReasoningEffort(chatToLoad.model || 'gpt-4o-mini'),
+                // Update deprecated global streaming state
+                isStreaming: streamingSession?.isStreaming || false,
+                streamingMessage: streamingSession?.streamingMessage || '',
+                abortController: streamingSession?.abortController || null,
               })
             }
           },
 
           deleteChat: (chatId: string) => {
+            // Stop any streaming for this chat first
+            get().stopStreaming(chatId)
+            
             set((state) => {
               const updatedChats = state.chats.filter(chat => chat.id !== chatId)
               
@@ -384,8 +478,11 @@ export const useChatStore = create<ChatState>()(
                   messages: [],
                   error: null,
                   unsupportedModelError: null,
-                  selectedModel: preferredModel,     
+                  selectedModel: preferredModel,
                   reasoningEffort: defaultReasoningEffort,
+                  isStreaming: false,
+                  streamingMessage: '',
+                  abortController: null,
                 }
               }
               
@@ -435,6 +532,7 @@ export const useChatStore = create<ChatState>()(
             const model = get().selectedModel
             const reasoningEffort = get().reasoningEffort
             const devMode = get().devMode
+            const currentChatId = get().currentChatId
             
             if (!apiKey) {
               set({ error: 'Please set your OpenAI API key in settings' })
@@ -471,8 +569,15 @@ export const useChatStore = create<ChatState>()(
             // Add user message with debug info
             get().addMessage(content, true, userDebugInfo)
             
-            // Add placeholder AI message that will be updated during streaming
-            const placeholderMessage = {
+            // Get the current chat ID after adding message (in case a new chat was created)
+            const chatId = get().currentChatId
+            if (!chatId) return
+
+            // Create streaming session for this chat
+            get().createStreamingSession(chatId)
+            
+            // Add placeholder AI message
+            const placeholderMessage: Message = {
               id: Date.now().toString() + '_ai',
               content: '',
               isUser: false,
@@ -483,16 +588,29 @@ export const useChatStore = create<ChatState>()(
               }),
             }
             
-            set(state => ({
-              messages: [...state.messages, placeholderMessage],
-              isLoading: true
-            }))
+            // Add placeholder to both current messages AND the chat in history
+            set(state => {
+              const updatedMessages = [...state.messages, placeholderMessage]
+              
+              // Also update the chat in history to include the placeholder
+              const updatedChats = state.chats.map(chat =>
+                chat.id === chatId
+                  ? { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                  : chat
+              )
+              
+              return {
+                messages: updatedMessages,
+                chats: updatedChats,
+                isLoading: true
+              }
+            })
 
             const startTime = Date.now()
 
             try {
               const controller = new AbortController()
-              set({ abortController: controller })
+              get().updateStreamingSession(chatId, { abortController: controller })
 
               const response = await fetch('/api/chat', {
                 method: 'POST',
@@ -512,12 +630,23 @@ export const useChatStore = create<ChatState>()(
               if (!response.ok) {
                 const errorData = await response.json()
                 if (errorData.unsupportedModel) {
-                  // Remove the last user message
-                  set(state => ({
-                    messages: state.messages.slice(0, -1),
-                    unsupportedModelError: errorData.error,
-                    isLoading: false
-                  }))
+                  // Remove the placeholder and user message
+                  set(state => {
+                    const updatedMessages = state.messages.slice(0, -2)
+                    const updatedChats = state.chats.map(chat =>
+                      chat.id === chatId
+                        ? { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                        : chat
+                    )
+                    
+                    return {
+                      messages: state.currentChatId === chatId ? updatedMessages : state.messages,
+                      chats: updatedChats,
+                      unsupportedModelError: errorData.error,
+                      isLoading: false
+                    }
+                  })
+                  get().cleanupStreamingSession(chatId)
                   return
                 }
                 throw new Error(errorData.error || 'Failed to get response')
@@ -525,7 +654,9 @@ export const useChatStore = create<ChatState>()(
 
               // Handle streaming response
               if (response.body) {
-                set({ isStreaming: true, isLoading: false })
+                get().updateStreamingSession(chatId, { isStreaming: true })
+                set({ isLoading: false })
+                
                 const reader = response.body.getReader()
                 const decoder = new TextDecoder()
                 let fullResponse = ''
@@ -552,14 +683,22 @@ export const useChatStore = create<ChatState>()(
                           
                           if (parsed.error) {
                             if (parsed.unsupportedModel) {
-                              // Remove the last user message
-                              set(state => ({
-                                messages: state.messages.slice(0, -1),
-                                unsupportedModelError: parsed.error,
-                                isStreaming: false,
-                                streamingMessage: '',
-                                isLoading: false
-                              }))
+                              // Remove messages and show error
+                              set(state => {
+                                const updatedMessages = state.messages.slice(0, -2)
+                                const updatedChats = state.chats.map(chat =>
+                                  chat.id === chatId
+                                    ? { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                                    : chat
+                                )
+                                
+                                return {
+                                  messages: state.currentChatId === chatId ? updatedMessages : state.messages,
+                                  chats: updatedChats,
+                                  unsupportedModelError: parsed.error,
+                                }
+                              })
+                              get().cleanupStreamingSession(chatId)
                               return
                             }
                             throw new Error(parsed.error)
@@ -567,7 +706,34 @@ export const useChatStore = create<ChatState>()(
                           
                           if (parsed.choices?.[0]?.delta?.content) {
                             fullResponse += parsed.choices[0].delta.content
-                            set({ streamingMessage: fullResponse })
+                            get().updateStreamingSession(chatId, { streamingMessage: fullResponse })
+                            
+                            // Update the placeholder message content in real-time for background chats
+                            set(state => {
+                              const updatedChats = state.chats.map(chat => {
+                                if (chat.id === chatId) {
+                                  const updatedMessages = chat.messages.map((msg, idx) => 
+                                    idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai')
+                                      ? { ...msg, content: fullResponse }
+                                      : msg
+                                  )
+                                  return { ...chat, messages: updatedMessages }
+                                }
+                                return chat
+                              })
+                              
+                              // If this is the current chat, also update the current messages
+                              if (state.currentChatId === chatId) {
+                                const updatedMessages = state.messages.map((msg, idx) => 
+                                  idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai')
+                                    ? { ...msg, content: fullResponse }
+                                    : msg
+                                )
+                                return { messages: updatedMessages, chats: updatedChats }
+                              }
+                              
+                              return { chats: updatedChats }
+                            })
                           }
                           if (parsed.usage) {
                             usage = parsed.usage
@@ -582,7 +748,7 @@ export const useChatStore = create<ChatState>()(
                   }
                 } catch (error: any) {
                   if (error.name === 'AbortError') {
-                    // Stream was cancelled - stopStreaming() already handled saving the partial message
+                    // Stream was cancelled - stopStreaming() already handled saving
                     return
                   }
                   throw error
@@ -599,65 +765,66 @@ export const useChatStore = create<ChatState>()(
                   }
                 } : undefined
 
-                // Si ya hay un mensaje streaming en progreso (último mensaje es IA), actualizarlo
-                // Si no, crear un nuevo mensaje
+                // Finalize the message
                 set(state => {
-                  const lastMessage = state.messages[state.messages.length - 1]
-                  const isUpdatingStreamingMessage = lastMessage && !lastMessage.isUser
+                  // Update the placeholder message with final content and debug info
+                  const finalMessage = {
+                    id: Date.now().toString(), // Give it a proper ID
+                    content: fullResponse,
+                    isUser: false,
+                    timestamp: new Date().toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    }),
+                    debugInfo: assistantDebugInfo,
+                  }
                   
-                  let updatedMessages
-                  if (isUpdatingStreamingMessage) {
-                    // Actualizar el último mensaje con el contenido completo
-                    updatedMessages = [
-                      ...state.messages.slice(0, -1),
-                      {
-                        ...lastMessage,
-                        content: fullResponse,
-                        debugInfo: assistantDebugInfo,
-                      }
-                    ]
-                  } else {
-                    // Crear nuevo mensaje
-                    const newMessage = {
-                      id: Date.now().toString(),
-                      content: fullResponse,
-                      isUser: false,
-                      timestamp: new Date().toLocaleTimeString('en-US', {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true,
-                      }),
-                      debugInfo: assistantDebugInfo,
+                  // Update chats array
+                  const updatedChats = state.chats.map(chat => {
+                    if (chat.id === chatId) {
+                      const updatedMessages = chat.messages.map((msg, idx) => 
+                        idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai')
+                          ? finalMessage
+                          : msg
+                      )
+                      return { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
                     }
-                    updatedMessages = [...state.messages, newMessage]
+                    return chat
+                  })
+                  
+                  // If this is the current chat, also update the current messages
+                  if (state.currentChatId === chatId) {
+                    const updatedMessages = state.messages.map((msg, idx) => 
+                      idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai')
+                        ? finalMessage
+                        : msg
+                    )
+                    return { messages: updatedMessages, chats: updatedChats }
                   }
                   
-                  // Update chat history if needed
-                  if (state.currentChatId) {
-                    debouncedUpdateChatHistory(state.currentChatId, updatedMessages)
-                  }
-                  
-                  return {
-                    messages: updatedMessages,
-                    isStreaming: false,
-                    streamingMessage: ''
-                  }
+                  return { chats: updatedChats }
                 })
+                
+                // Clean up streaming session
+                get().cleanupStreamingSession(chatId)
               }
             } catch (error: any) {
               console.error('Chat error:', error)
               if (error.name !== 'AbortError') {
-                set({ 
-                  error: error?.message || 'An error occurred while sending the message',
-                  isStreaming: false,
-                  streamingMessage: ''
-                })
+                // Only set error if we're still on the same chat
+                if (get().currentChatId === chatId) {
+                  set({ 
+                    error: error?.message || 'An error occurred while sending the message',
+                  })
+                }
+                get().cleanupStreamingSession(chatId)
               }
             } finally {
-              set({ 
-                isLoading: false,
-                abortController: null
-              })
+              // Only clear loading if we're still on the same chat
+              if (get().currentChatId === chatId) {
+                set({ isLoading: false })
+              }
             }
           },
 
@@ -763,7 +930,84 @@ export const useChatStore = create<ChatState>()(
             const model = modelId || get().selectedModel
             const reasoningModels = ['o1', 'o1-preview', 'o1-mini', 'o3', 'o3-pro', 'o4-mini']
             return reasoningModels.some(rm => model.includes(rm))
-          }
+          },
+
+          // NEW: Computed getters for current chat streaming
+          getCurrentChatStreaming: () => {
+            const { currentChatId, streamingSessions } = get()
+            if (!currentChatId) return null
+            return streamingSessions.get(currentChatId) || null
+          },
+
+          isCurrentChatStreaming: () => {
+            const session = get().getCurrentChatStreaming()
+            return session?.isStreaming || false
+          },
+
+          getCurrentStreamingMessage: () => {
+            const session = get().getCurrentChatStreaming()
+            return session?.streamingMessage || ''
+          },
+
+          // NEW: Get list of currently streaming chats
+          getStreamingChats: () => {
+            const { streamingSessions } = get()
+            return Array.from(streamingSessions.entries())
+              .filter(([_, session]) => session.isStreaming)
+              .map(([chatId]) => chatId)
+          },
+
+          // NEW: Streaming session management
+          createStreamingSession: (chatId: string) => {
+            set((state) => {
+              const sessions = new Map(state.streamingSessions)
+              sessions.set(chatId, {
+                isStreaming: false,
+                streamingMessage: '',
+                abortController: null,
+              })
+              return { streamingSessions: sessions }
+            })
+          },
+
+          updateStreamingSession: (chatId: string, updates: Partial<StreamingSession>) => {
+            set((state) => {
+              const sessions = new Map(state.streamingSessions)
+              const current = sessions.get(chatId) || {
+                isStreaming: false,
+                streamingMessage: '',
+                abortController: null,
+              }
+              sessions.set(chatId, { ...current, ...updates })
+              
+              // Update deprecated global state if this is the current chat
+              const updateState: any = { streamingSessions: sessions }
+              if (state.currentChatId === chatId) {
+                if ('isStreaming' in updates) updateState.isStreaming = updates.isStreaming
+                if ('streamingMessage' in updates) updateState.streamingMessage = updates.streamingMessage
+                if ('abortController' in updates) updateState.abortController = updates.abortController
+              }
+              
+              return updateState
+            })
+          },
+
+          cleanupStreamingSession: (chatId: string) => {
+            set((state) => {
+              const sessions = new Map(state.streamingSessions)
+              sessions.delete(chatId)
+              
+              // Clear deprecated global state if this was the current chat
+              const updateState: any = { streamingSessions: sessions }
+              if (state.currentChatId === chatId) {
+                updateState.isStreaming = false
+                updateState.streamingMessage = ''
+                updateState.abortController = null
+              }
+              
+              return updateState
+            })
+          },
         }
       },
       {
@@ -774,6 +1018,7 @@ export const useChatStore = create<ChatState>()(
           messages: state.messages,
           reasoningEffort: state.reasoningEffort,
           devMode: state.devMode,
+          // Don't persist streaming sessions
         }),
         version: 3,
         migrate: (persistedState: any, version: number) => {

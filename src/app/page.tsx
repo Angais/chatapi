@@ -14,12 +14,23 @@ import { AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function ChatPage() {
-  const { messages, isLoading, isStreaming, streamingMessage, error, fetchModels, init } = useChatStore()
+  const { 
+    messages, 
+    isLoading, 
+    isCurrentChatStreaming,
+    getCurrentStreamingMessage,
+    error, 
+    fetchModels, 
+    init 
+  } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [dynamicPadding, setDynamicPadding] = useState(0)
   const prevMessagesLengthRef = useRef(messages.length)
+
+  const isStreaming = isCurrentChatStreaming()
+  const streamingMessage = getCurrentStreamingMessage()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -142,36 +153,24 @@ export default function ChatPage() {
 
               {/* Messages - including streaming message */}
               {messages.map((message, index) => {
-                // Si es el último mensaje y estamos streaming, usar el contenido streaming
                 const isLastMessage = index === messages.length - 1
-                const shouldShowAsStreaming = isLastMessage && !message.isUser && isStreaming && !!streamingMessage
+                const isPlaceholder = message.id.endsWith('_ai')
+                const shouldShowStreaming = isLastMessage && !message.isUser && isStreaming && (isPlaceholder || !message.content)
                 
                 return (
                   <ChatMessage
                     key={message.id}
-                    content={shouldShowAsStreaming ? streamingMessage : message.content}
+                    content={shouldShowStreaming && streamingMessage ? streamingMessage : message.content}
                     isUser={message.isUser}
                     timestamp={message.timestamp}
                     message={message}
-                    isStreaming={shouldShowAsStreaming}
+                    isStreaming={shouldShowStreaming}
                   />
                 )
               })}
               
-              {/* Mensaje streaming temporal solo si no hay mensajes o el último es del usuario */}
-              {isStreaming && streamingMessage && (messages.length === 0 || messages[messages.length - 1]?.isUser) && (
-                <div key="streaming-wrapper" className="streaming-message-container">
-                  <ChatMessage
-                    key="streaming"
-                    content={streamingMessage}
-                    isUser={false}
-                    isStreaming={true}
-                  />
-                </div>
-              )}
-              
-              {/* Typing indicator */}
-              {(isLoading || isStreaming) && !streamingMessage && <TypingIndicator />}
+              {/* Typing indicator - only show if no streaming content yet */}
+              {(isLoading || (isStreaming && !streamingMessage)) && <TypingIndicator />}
               
               {/* Dynamic padding to create space for new messages */}
               <div 

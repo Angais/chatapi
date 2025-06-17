@@ -13,9 +13,10 @@ interface ChatHistoryProps {
 }
 
 export function ChatHistory({ isOpen }: ChatHistoryProps) {
-  const { chats, currentChatId, loadChat, deleteChat, updateChatTitle } = useChatStore()
+  const { chats, currentChatId, loadChat, deleteChat, updateChatTitle, getStreamingChats } = useChatStore()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
+  const streamingChats = getStreamingChats()
 
   const handleEdit = (chatId: string, currentTitle: string) => {
     setEditingId(chatId)
@@ -79,93 +80,111 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
               </div>
             ) : (
               <div className="p-2">
-                {chats.map((chat) => (
-                  <motion.div
-                    key={chat.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={cn(
-                      "group relative mb-1 rounded-lg transition-colors",
-                      currentChatId === chat.id ? "bg-accent" : "hover:bg-accent/50"
-                    )}
-                  >
-                    {editingId === chat.id ? (
-                      <div className="flex items-center gap-1 p-2">
-                        <Input
-                          value={editingTitle}
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveEdit(chat.id)
-                            if (e.key === 'Escape') handleCancelEdit()
-                          }}
-                          className="h-7 text-sm"
-                          autoFocus
-                        />
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          onClick={() => handleSaveEdit(chat.id)}
-                        >
-                          <Check className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          onClick={handleCancelEdit}
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => loadChat(chat.id)}
-                        className="w-full text-left p-3 pr-20"
-                      >
-                        <div className="flex items-start gap-3">
-                          <MessageSquare className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {chat.title}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatDate(chat.updatedAt)}
-                            </p>
-                          </div>
+                {chats.map((chat) => {
+                  const isStreaming = streamingChats.includes(chat.id)
+                  
+                  return (
+                    <motion.div
+                      key={chat.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={cn(
+                        "group relative mb-1 rounded-lg transition-colors",
+                        currentChatId === chat.id ? "bg-accent" : "hover:bg-accent/50"
+                      )}
+                    >
+                      {editingId === chat.id ? (
+                        <div className="flex items-center gap-1 p-2">
+                          <Input
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveEdit(chat.id)
+                              if (e.key === 'Escape') handleCancelEdit()
+                            }}
+                            className="h-7 text-sm"
+                            autoFocus
+                          />
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={() => handleSaveEdit(chat.id)}
+                          >
+                            <Check className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={handleCancelEdit}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
                         </div>
-                      </button>
-                    )}
+                      ) : (
+                        <button
+                          onClick={() => loadChat(chat.id)}
+                          className="w-full text-left p-3 pr-20"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="relative">
+                              <MessageSquare className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
+                              {isStreaming && (
+                                <motion.div
+                                  className="absolute -bottom-1 -right-1 w-2 h-2 bg-green-500 rounded-full"
+                                  animate={{ opacity: [1, 0.3, 1] }}
+                                  transition={{ duration: 1.5, repeat: Infinity }}
+                                />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">
+                                {chat.title}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatDate(chat.updatedAt)}
+                                {isStreaming && (
+                                  <span className="ml-2 text-green-600 dark:text-green-400">
+                                    • Streaming
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      )}
 
-                    {/* Actions */}
-                    {editingId !== chat.id && (
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleEdit(chat.id, chat.title)
-                          }}
-                        >
-                          <Edit2 className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 hover:text-destructive"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            deleteChat(chat.id)
-                          }}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    )}
-                  </motion.div>
-                ))}
+                      {/* Actions */}
+                      {editingId !== chat.id && (
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleEdit(chat.id, chat.title)
+                            }}
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              deleteChat(chat.id)
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </motion.div>
+                  )
+                })}
               </div>
             )}
           </div>

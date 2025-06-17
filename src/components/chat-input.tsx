@@ -10,7 +10,16 @@ export function ChatInput() {
   const [message, setMessage] = useState('')
   const [previousMessage, setPreviousMessage] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { sendMessage, isLoading, isStreaming, stopStreaming, error } = useChatStore()
+  const { 
+    sendMessage, 
+    isLoading, 
+    isCurrentChatStreaming,
+    stopStreaming, 
+    error,
+    currentChatId
+  } = useChatStore()
+
+  const isStreaming = isCurrentChatStreaming()
 
   useEffect(() => {
     if (textareaRef.current) {

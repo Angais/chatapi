@@ -4,8 +4,11 @@ import { motion } from 'framer-motion'
 import { useChatStore } from '@/stores/chat-store'
 
 export function TypingIndicator() {
-  const { isReasoningModel, selectedModel, getOtherModels } = useChatStore()
+  const { isReasoningModel, selectedModel, getOtherModels, currentChatId } = useChatStore()
   const otherModels = getOtherModels()
+  
+  // Only show for current chat
+  if (!currentChatId) return null
   
   // Determine if the current model is a reasoning model or in "all models"
   const isReasoning = isReasoningModel(selectedModel)
