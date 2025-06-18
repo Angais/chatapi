@@ -23,7 +23,7 @@ export function useVoiceChat() {
   useEffect(() => {
     if (isRealtimeModel() && voiceMode !== 'none') {
       // Always create a new audio player instance when entering voice mode
-      console.log('🎵 Initializing audio player for voice mode:', voiceMode)
+      console.log('Initializing audio player for voice mode:', voiceMode)
       audioPlayer.current = new AudioPlayer()
     } else {
       // Cleanup when not using voice
@@ -118,17 +118,12 @@ export function useVoiceChat() {
           }
         },
         onError: (error) => {
-          console.error('Realtime API error:', {
-            message: error?.message || 'Unknown error',
-            type: error?.type,
-            code: error?.code,
-            fullError: error
-          })
+          console.error('Realtime API error:', error)
           setIsConnected(false)
           if (connectionTimeout) {
             clearTimeout(connectionTimeout)
           }
-          reject(error) // Reject the promise on error
+          reject(error)
         }
       })
 
