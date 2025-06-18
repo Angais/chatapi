@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, Phone, PhoneOff } from 'lucide-react'
+import { Mic, MicOff, Phone, PhoneOff, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useChatStore } from '@/stores/chat-store'
 import { useVoiceChat } from '@/hooks/use-voice-chat'
@@ -21,9 +21,56 @@ export function VoiceChatControls() {
   } = useVoiceChat()
 
   const [isConnecting, setIsConnecting] = useState(false)
+  const [sessionStartTime, setSessionStartTime] = useState<number | null>(null)
+  const [, forceUpdate] = useState({})
   
   // Check if we should auto-initiate connection based on having messages
   const hasMessages = messages.length > 0
+
+  // Calculate elapsed time based on start time
+  const getElapsedSeconds = () => {
+    if (!sessionStartTime || !isConnected) return 0
+    return Math.floor((Date.now() - sessionStartTime) / 1000)
+  }
+
+  // Format elapsed time as MM:SS or HH:MM:SS
+  const formatElapsedTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+    }
+    return `${minutes}:${secs.toString().padStart(2, '0')}`
+  }
+
+  // Update timer display every second when connected
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null
+    
+    if (isConnected) {
+      // Force re-render every second to update the timer display
+      interval = setInterval(() => {
+        forceUpdate({})
+      }, 1000)
+    }
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval)
+      }
+    }
+  }, [isConnected])
+
+  // Set/clear session start time based on connection status
+  useEffect(() => {
+    if (isConnected && !sessionStartTime) {
+      setSessionStartTime(Date.now())
+    } else if (!isConnected && sessionStartTime) {
+      setSessionStartTime(null)
+    }
+  }, [isConnected, sessionStartTime])
 
   const handleConnect = useCallback(async () => {
     try {
@@ -55,6 +102,7 @@ export function VoiceChatControls() {
   }
 
   const isSessionActive = isConnected || isConnecting
+  const elapsedSeconds = getElapsedSeconds()
 
   return (
     <motion.div
@@ -81,14 +129,28 @@ export function VoiceChatControls() {
               
               {isConnected && (
                 <motion.div
-                  className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400"
+                  className="flex items-center gap-3"
                 >
                   <motion.div
-                    animate={{ scale: [1, 1.2, 1] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    className="w-2 h-2 bg-green-500 rounded-full"
-                  />
-                  Voice session active
+                    className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400"
+                  >
+                    <motion.div
+                      animate={{ scale: [1, 1.2, 1] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                      className="w-2 h-2 bg-green-500 rounded-full"
+                    />
+                    Voice session active
+                  </motion.div>
+                  
+                  {/* Session timer */}
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-full"
+                  >
+                    <Clock className="h-3 w-3" />
+                    <span className="font-mono">{formatElapsedTime(elapsedSeconds)}</span>
+                  </motion.div>
                 </motion.div>
               )}
               
@@ -177,6 +239,16 @@ export function VoiceChatControls() {
                 >
                   <PhoneOff className="h-4 w-4" />
                 </Button>
+                
+                {/* Session timer for voice-to-voice */}
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-full"
+                >
+                  <Clock className="h-3 w-3" />
+                  <span className="font-mono">{formatElapsedTime(elapsedSeconds)}</span>
+                </motion.div>
               </>
             )}
           </>
