@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '@/components/header'
 import { ChatMessage } from '@/components/chat-message'
 import { ChatInput } from '@/components/chat-input'
@@ -9,6 +9,7 @@ import { TypingIndicator } from '@/components/typing-indicator'
 import { EmptyState } from '@/components/empty-state'
 import { ChatHistory } from '@/components/chat-history'
 import { UnsupportedModelDisclaimer } from '@/components/unsupported-model-disclaimer'
+import { VoiceChatControls } from '@/components/voice-chat-controls'
 import { useChatStore } from '@/stores/chat-store'
 import { AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -21,7 +22,9 @@ export default function ChatPage() {
     getCurrentStreamingMessage,
     error, 
     fetchModels, 
-    init 
+    init,
+    isRealtimeModel,
+    voiceMode
   } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
@@ -185,6 +188,12 @@ export default function ChatPage() {
           )}
           
           <UnsupportedModelDisclaimer />
+          {/* Voice Chat Controls - only show once, above the input */}
+          <AnimatePresence>
+            {isRealtimeModel() && voiceMode !== 'none' && (
+              <VoiceChatControls />
+            )}
+          </AnimatePresence>
           <ChatInput />
         </main>
       </div>

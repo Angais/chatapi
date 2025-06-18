@@ -55,6 +55,11 @@ export const MODEL_PRESETS = [
   { id: 'gpt-4.1-nano', displayName: 'GPT-4.1 nano' },
 ]
 
+// Realtime models for voice
+export const REALTIME_MODELS = [
+  { id: 'gpt-4o-realtime-preview', displayName: 'GPT-4o Realtime' },
+]
+
 // Modelos que soportan reasoning effort
 export const REASONING_MODELS = ['o3', 'o3-pro', 'o4-mini']
 
@@ -97,6 +102,9 @@ export const EXCLUDED_MODELS = [
   'babbage-002'
 ]
 
+// Voice mode types
+export type VoiceMode = 'text-to-voice' | 'voice-to-voice' | 'none'
+
 export interface Chat {
   id: string
   title: string
@@ -105,6 +113,7 @@ export interface Chat {
   updatedAt: string
   model: string
   reasoningEffort?: ReasoningEffort
+  voiceMode?: VoiceMode
 }
 
 // Add new interface for streaming sessions
@@ -125,6 +134,7 @@ interface ChatState {
   error: string | null
   selectedModel: string
   reasoningEffort: ReasoningEffort
+  voiceMode: VoiceMode
   
   // NEW: Track streaming sessions per chat
   streamingSessions: Map<string, StreamingSession>
@@ -164,6 +174,7 @@ interface ChatState {
   updateChatTitle: (chatId: string, title: string) => void
   setSelectedModel: (model: string) => void
   setReasoningEffort: (effort: ReasoningEffort) => void
+  setVoiceMode: (mode: VoiceMode) => void
   
   // Dev Mode actions
   setDevMode: (devMode: boolean) => void
@@ -178,6 +189,7 @@ interface ChatState {
   
   // Streaming helpers
   isReasoningModel: (modelId?: string) => boolean
+  isRealtimeModel: (modelId?: string) => boolean
   
   // NEW: Computed getters for current chat streaming
   getCurrentChatStreaming: () => StreamingSession | null
@@ -241,6 +253,7 @@ export const useChatStore = create<ChatState>()(
           isLoadingModels: false,
           modelsError: null,
           reasoningEffort: 'no-reasoning',
+          voiceMode: 'none',
           devMode: false,
           unsupportedModelError: null,
           streamingSessions: new Map(), // NEW
@@ -295,6 +308,7 @@ export const useChatStore = create<ChatState>()(
                   updatedAt: new Date().toISOString(),
                   model: get().selectedModel,
                   reasoningEffort: get().reasoningEffort,
+                  voiceMode: get().voiceMode,
                 }
                 
                 return {
@@ -453,6 +467,7 @@ export const useChatStore = create<ChatState>()(
                 unsupportedModelError: null,
                 selectedModel: chatToLoad.model || 'gpt-4o-mini',
                 reasoningEffort: chatToLoad.reasoningEffort || get().getDefaultReasoningEffort(chatToLoad.model || 'gpt-4o-mini'),
+                voiceMode: chatToLoad.voiceMode || 'none',
                 // Update deprecated global streaming state
                 isStreaming: streamingSession?.isStreaming || false,
                 streamingMessage: streamingSession?.streamingMessage || '',
@@ -898,6 +913,27 @@ export const useChatStore = create<ChatState>()(
             set({ reasoningEffort: effort })
           },
 
+          setVoiceMode: (mode: VoiceMode) => {
+            set({ voiceMode: mode })
+            
+            // Update voice mode for current chat if there is one
+            const { currentChatId, chats } = get()
+            if (currentChatId) {
+              const currentChat = chats.find(c => c.id === currentChatId)
+              // Only update if voice mode has actually changed to avoid unnecessary re-renders
+              if (currentChat && currentChat.voiceMode !== mode) {
+                set(state => ({
+                  chats: state.chats.map(chat =>
+                    chat.id === currentChatId ? { 
+                      ...chat, 
+                      voiceMode: mode
+                    } : chat
+                  ),
+                }))
+              }
+            }
+          },
+
           shouldShowReasoningSelector: () => {
             const { selectedModel, getOtherModels } = get()
             // Mostrar para modelos de reasoning específicos o modelos "otros"
@@ -930,6 +966,11 @@ export const useChatStore = create<ChatState>()(
             const model = modelId || get().selectedModel
             const reasoningModels = ['o1', 'o1-preview', 'o1-mini', 'o3', 'o3-pro', 'o4-mini']
             return reasoningModels.some(rm => model.includes(rm))
+          },
+
+          isRealtimeModel: (modelId?: string) => {
+            const model = modelId || get().selectedModel
+            return REALTIME_MODELS.some(rm => rm.id === model)
           },
 
           // NEW: Computed getters for current chat streaming
@@ -1017,10 +1058,11 @@ export const useChatStore = create<ChatState>()(
           currentChatId: state.currentChatId,
           messages: state.messages,
           reasoningEffort: state.reasoningEffort,
+          voiceMode: state.voiceMode,
           devMode: state.devMode,
           // Don't persist streaming sessions
         }),
-        version: 3,
+        version: 4,
         migrate: (persistedState: any, version: number) => {
           if (version < 2) {
             if (persistedState && persistedState.chats) {
@@ -1037,6 +1079,17 @@ export const useChatStore = create<ChatState>()(
           if (version < 3) {
             if (persistedState) {
               persistedState.devMode = false
+            }
+          }
+          if (version < 4) {
+            if (persistedState) {
+              persistedState.voiceMode = 'none'
+              if (persistedState.chats) {
+                persistedState.chats = persistedState.chats.map((chat: any) => ({
+                  ...chat,
+                  voiceMode: 'none',
+                }))
+              }
             }
           }
           return persistedState

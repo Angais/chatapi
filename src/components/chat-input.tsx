@@ -5,21 +5,33 @@ import { motion } from 'framer-motion'
 import { Send, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useChatStore } from '@/stores/chat-store'
+import { useVoiceChat } from '@/hooks/use-voice-chat'
 
 export function ChatInput() {
   const [message, setMessage] = useState('')
   const [previousMessage, setPreviousMessage] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const connectionRef = useRef<boolean>(false) // Track connection state
+  
   const { 
     sendMessage, 
     isLoading, 
     isCurrentChatStreaming,
     stopStreaming, 
     error,
-    currentChatId
+    currentChatId,
+    voiceMode,
+    isRealtimeModel
   } = useChatStore()
 
+  const { sendTextMessage, isConnected, connect } = useVoiceChat()
+
   const isStreaming = isCurrentChatStreaming()
+
+  // Update connection ref when isConnected changes
+  useEffect(() => {
+    connectionRef.current = isConnected
+  }, [isConnected])
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -41,8 +53,40 @@ export function ChatInput() {
       const messageToSend = message.trim()
       setPreviousMessage(messageToSend)
       setMessage('')
-      await sendMessage(messageToSend)
-      setPreviousMessage('')
+      
+      // Use voice chat for text-to-voice with realtime models
+      if (isRealtimeModel() && voiceMode === 'text-to-voice') {
+        console.log('Attempting to send via voice chat...', { isConnected: connectionRef.current })
+        
+        try {
+          // If not connected, connect first
+          if (!connectionRef.current) {
+            console.log('Not connected, establishing connection...')
+            await connect()
+            console.log('Connection established.')
+          }
+          
+          // Now send the message
+          console.log('Sending text message through voice chat')
+          sendTextMessage(messageToSend)
+          
+          // Clear the previous message since it was sent successfully
+          setPreviousMessage('')
+        } catch (error) {
+          console.error('Failed to connect or send message:', error)
+          // Restore message on error
+          setMessage(messageToSend)
+          setPreviousMessage('')
+          
+          // Show error to user
+          useChatStore.getState().setError('Failed to establish voice connection. Please try again.')
+          return
+        }
+      } else {
+        // Regular chat for non-realtime models
+        await sendMessage(messageToSend)
+        setPreviousMessage('')
+      }
     }
   }
 
@@ -61,7 +105,7 @@ export function ChatInput() {
     }
   }
 
-  const isDisabled = (!message.trim() && !isStreaming && !isLoading) || (!isStreaming && !isLoading && !message.trim())
+  const isDisabled = !message.trim() || (isLoading && !isStreaming)
 
   return (
     <motion.div

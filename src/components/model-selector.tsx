@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useChatStore } from '@/stores/chat-store'
+import { useChatStore, REALTIME_MODELS } from '@/stores/chat-store'
 import {
   Select,
   SelectContent,
@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/select'
 import * as SelectPrimitive from '@radix-ui/react-select'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, ChevronDown, ChevronRight } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronRight, Mic } from 'lucide-react'
 import { ReasoningEffortSelector } from './reasoning-effort-selector'
 import { cn } from '@/lib/utils'
 
@@ -109,6 +109,8 @@ export function ModelSelector() {
     isLoadingModels,
     getAvailablePresets,
     getOtherModels,
+    setVoiceMode,
+    isRealtimeModel,
   } = useChatStore()
 
   const [showAllModels, setShowAllModels] = useState(false)
@@ -126,14 +128,19 @@ export function ModelSelector() {
   const getDisplayName = (modelId: string) => {
     const preset = availablePresets.find(p => p.id === modelId)
     if (preset) return preset.displayName
+    
+    const realtimeModel = REALTIME_MODELS.find(rm => rm.id === modelId)
+    if (realtimeModel) return realtimeModel.displayName
+    
     return modelId
   }
 
-  // Check if selected model is in other models (not in presets)
+  // Check if selected model is in other models (not in presets or realtime)
   const isSelectedModelInOtherModels = () => {
     const isInPresets = availablePresets.some(preset => preset.id === selectedModel)
+    const isInRealtime = REALTIME_MODELS.some(rm => rm.id === selectedModel)
     const isInOtherModels = otherModels.some(model => model.id === selectedModel)
-    return !isInPresets && isInOtherModels
+    return !isInPresets && !isInRealtime && isInOtherModels
   }
 
   // Track model changes for animations
@@ -191,6 +198,14 @@ export function ModelSelector() {
   const handleModelChange = (value: string) => {
     // Animate the change
     setSelectedModel(value)
+    
+    // If switching to a realtime model, enable text-to-voice by default
+    if (REALTIME_MODELS.some(m => m.id === value)) {
+      setVoiceMode('text-to-voice')
+    } else {
+      // Reset to none when switching away from realtime
+      setVoiceMode('none')
+    }
   }
 
   return (
@@ -241,8 +256,34 @@ export function ModelSelector() {
               </motion.div>
             ))}
             
+            {/* Realtime models */}
+            {REALTIME_MODELS.length > 0 && availablePresets.length > 0 && (
+              <SelectSeparator />
+            )}
+            
+            {REALTIME_MODELS.map((model, index) => (
+              <motion.div
+                key={model.id}
+                ref={model.id === selectedModel ? selectedItemRef : null}
+                initial={shouldAnimatePresets ? { opacity: 0, x: -10 } : false}
+                animate={shouldAnimatePresets ? { opacity: 1, x: 0 } : false}
+                transition={shouldAnimatePresets ? { delay: (availablePresets.length + index) * 0.02, duration: 0.15 } : {}}
+              >
+                <SelectItem value={model.id}>
+                  <motion.div
+                    className="flex items-center gap-2"
+                    whileHover={{ x: 2 }}
+                    transition={{ duration: 0.1 }}
+                  >
+                    <Mic className="h-3 w-3" />
+                    <span>{model.displayName}</span>
+                  </motion.div>
+                </SelectItem>
+              </motion.div>
+            ))}
+            
             {/* Separador y desplegable de otros modelos */}
-            {otherModels.length > 0 && availablePresets.length > 0 && (
+            {otherModels.length > 0 && (availablePresets.length > 0 || REALTIME_MODELS.length > 0) && (
               <SelectSeparator />
             )}
             

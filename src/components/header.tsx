@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { SettingsModal } from '@/components/settings-modal'
 import { useChatStore } from '@/stores/chat-store'
 import { ModelSelector } from './model-selector'
+import { VoiceModeSelector } from './voice-mode-selector'
 
 interface HeaderProps {
   onToggleSidebar: () => void
@@ -46,6 +47,7 @@ export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
           </Button>
           
           <ModelSelector />
+          <VoiceModeSelector />
         </div>
 
         {/* Lado derecho - Acciones */}
