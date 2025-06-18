@@ -437,6 +437,11 @@ export const useChatStore = create<ChatState>()(
           createNewChat: () => {
             const state = get()
             
+            // Stop any active streaming for current chat
+            if (state.currentChatId) {
+              get().stopStreaming(state.currentChatId)
+            }
+            
             // Only save if there are messages
             if (state.currentChatId && state.messages.length > 0) {
               // Chat is already auto-saved, no need to update again
@@ -445,7 +450,7 @@ export const useChatStore = create<ChatState>()(
             const preferredModel = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
             const defaultReasoningEffort = get().getDefaultReasoningEffort(preferredModel)
             
-            // Clear current chat
+            // Clear current chat and reset all session states
             set({
               currentChatId: null,
               messages: [],
@@ -453,7 +458,12 @@ export const useChatStore = create<ChatState>()(
               unsupportedModelError: null,
               selectedModel: preferredModel,
               reasoningEffort: defaultReasoningEffort,
+              voiceMode: 'none', // Reset voice mode to trigger cleanup
               isVoiceSessionEnded: false,
+              // Reset deprecated global streaming state
+              isStreaming: false,
+              streamingMessage: '',
+              abortController: null,
             })
           },
 
