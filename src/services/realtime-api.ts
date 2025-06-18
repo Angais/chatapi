@@ -86,10 +86,11 @@ export class RealtimeAPIService {
       this.isConnected = true
       this.config.onConnectionChange?.(true)
       
-      // Configure session
+      // Configure session for voice-to-voice with both text and audio
       this.sendEvent({
         type: 'session.update',
         session: {
+          modalities: ['text', 'audio'], // Need both for audio output
           voice: this.config.voice || 'alloy',
           instructions: 'You are a helpful assistant.',
           input_audio_format: 'pcm16',
@@ -99,7 +100,8 @@ export class RealtimeAPIService {
             threshold: 0.5,
             prefix_padding_ms: 300,
             silence_duration_ms: 500
-          }
+          },
+          temperature: 0.8
         }
       })
     }
@@ -128,45 +130,137 @@ export class RealtimeAPIService {
 
   private handleServerEvent(event: any) {
     this.config.onMessage?.(event)
+    
+    // More detailed logging for debugging
+    if (event.type.includes('audio') || event.type.includes('response')) {
+      console.log(`[${event.type}]`, event)
+    } else {
+      console.log('Realtime event:', event.type)
+    }
 
     switch (event.type) {
       case 'session.created':
+        console.log('Session created with modalities:', event.session?.modalities)
+        console.log('Full session:', event.session)
+        break
+        
       case 'session.updated':
-        console.log('Session event:', event)
+        console.log('Session updated with modalities:', event.session?.modalities)
+        console.log('Full session:', event.session)
         break
         
       case 'response.audio.delta':
         if (event.delta) {
+          console.log('🔊 AUDIO DELTA RECEIVED! Length:', event.delta.length)
+          console.log('First 50 chars:', event.delta.substring(0, 50))
           this.config.onAudioData?.(event.delta)
+        } else {
+          console.warn('⚠️ Audio delta event with no data!')
         }
         break
         
       case 'response.audio_transcript.delta':
         if (event.delta) {
+          console.log('📝 Transcript delta:', event.delta)
           this.config.onTranscript?.(event.delta, false)
         }
         break
         
       case 'response.audio_transcript.done':
         if (event.transcript) {
+          console.log('📝 Final transcript:', event.transcript)
           this.config.onTranscript?.(event.transcript, true)
         }
         break
         
-      case 'error':
-        console.error('Server error:', event)
-        this.config.onError?.(event)
+      case 'input_audio_buffer.speech_started':
+        console.log('🎤 Speech started')
         break
+        
+      case 'input_audio_buffer.speech_stopped':
+        console.log('🎤 Speech stopped')
+        break
+        
+      case 'input_audio_buffer.committed':
+        console.log('✅ Audio buffer committed')
+        break
+        
+      case 'conversation.item.created':
+        console.log('💬 Conversation item created:', {
+          role: event.item?.role,
+          type: event.item?.type,
+          hasContent: !!event.item?.content
+        })
+        break
+        
+      case 'response.created':
+        console.log('🚀 Response created with modalities:', event.response?.modalities)
+        console.log('Full response object:', event.response)
+        break
+        
+      case 'response.done':
+        console.log('✅ Response done with modalities:', event.response?.modalities)
+        console.log('Output items:', event.response?.output)
+        // Check what we actually got
+        event.response?.output?.forEach((item: any, index: number) => {
+          console.log(`Output ${index}:`, {
+            type: item.type,
+            role: item.role,
+            hasContent: !!item.content,
+            contentTypes: item.content?.map((c: any) => c.type)
+          })
+        })
+        break
+        
+      case 'response.output_item.added':
+        console.log('📦 Output item added:', {
+          type: event.item?.type,
+          role: event.item?.role
+        })
+        break
+        
+      case 'response.output_item.done':
+        console.log('📦 Output item done:', {
+          type: event.item?.type,
+          role: event.item?.role,
+          hasContent: !!event.item?.content
+        })
+        break
+        
+      case 'error':
+        console.error('❌ Server error:', {
+          type: event.error?.type,
+          code: event.error?.code,
+          message: event.error?.message,
+          param: event.error?.param,
+          event_id: event.event_id,
+          fullError: event
+        })
+        this.config.onError?.(event.error || event)
+        break
+        
+      default:
+        // Don't log text deltas to reduce noise
+        if (!['response.text.delta', 'response.text.done'].includes(event.type)) {
+          console.log('❓ Unhandled event:', event.type)
+        }
     }
   }
 
   async setupAudioInput() {
     try {
       // Request microphone access
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          channelCount: 1,
+          sampleRate: 24000,
+          echoCancellation: true,
+          noiseSuppression: true
+        } 
+      })
       
-      // Create audio context
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      // Create audio context with specific sample rate
+      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 })
       
       // Create source from media stream
       const source = this.audioContext.createMediaStreamSource(this.mediaStream)
@@ -189,6 +283,9 @@ export class RealtimeAPIService {
       
       source.connect(processor)
       processor.connect(this.audioContext.destination)
+      
+      // Don't trigger response.create here - let VAD handle it
+      console.log('Audio input setup complete')
     } catch (error) {
       console.error('Failed to setup audio input:', error)
       this.config.onError?.(error)

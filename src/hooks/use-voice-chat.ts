@@ -22,9 +22,9 @@ export function useVoiceChat() {
   // Initialize services
   useEffect(() => {
     if (isRealtimeModel() && voiceMode !== 'none') {
-      if (!audioPlayer.current) {
-        audioPlayer.current = new AudioPlayer()
-      }
+      // Always create a new audio player instance when entering voice mode
+      console.log('🎵 Initializing audio player for voice mode:', voiceMode)
+      audioPlayer.current = new AudioPlayer()
     } else {
       // Cleanup when not using voice
       if (realtimeService.current) {
@@ -38,6 +38,14 @@ export function useVoiceChat() {
       setIsConnected(false)
       setIsRecording(false)
       setCurrentTranscript('')
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (audioPlayer.current) {
+        audioPlayer.current.cleanup()
+        audioPlayer.current = null
+      }
     }
   }, [voiceMode, isRealtimeModel])
 
@@ -110,7 +118,12 @@ export function useVoiceChat() {
           }
         },
         onError: (error) => {
-          console.error('Realtime API error:', error)
+          console.error('Realtime API error:', {
+            message: error?.message || 'Unknown error',
+            type: error?.type,
+            code: error?.code,
+            fullError: error
+          })
           setIsConnected(false)
           if (connectionTimeout) {
             clearTimeout(connectionTimeout)
