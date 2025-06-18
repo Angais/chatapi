@@ -114,6 +114,7 @@ export interface Chat {
   model: string
   reasoningEffort?: ReasoningEffort
   voiceMode?: VoiceMode
+  isVoiceSessionEnded?: boolean
 }
 
 // Add new interface for streaming sessions
@@ -135,6 +136,7 @@ interface ChatState {
   selectedModel: string
   reasoningEffort: ReasoningEffort
   voiceMode: VoiceMode
+  isVoiceSessionEnded: boolean
   
   // NEW: Track streaming sessions per chat
   streamingSessions: Map<string, StreamingSession>
@@ -175,6 +177,7 @@ interface ChatState {
   setSelectedModel: (model: string) => void
   setReasoningEffort: (effort: ReasoningEffort) => void
   setVoiceMode: (mode: VoiceMode) => void
+  setVoiceSessionEnded: (ended: boolean) => void
   
   // Dev Mode actions
   setDevMode: (devMode: boolean) => void
@@ -254,6 +257,7 @@ export const useChatStore = create<ChatState>()(
           modelsError: null,
           reasoningEffort: 'no-reasoning',
           voiceMode: 'none',
+          isVoiceSessionEnded: false,
           devMode: false,
           unsupportedModelError: null,
           streamingSessions: new Map(), // NEW
@@ -309,6 +313,7 @@ export const useChatStore = create<ChatState>()(
                   model: get().selectedModel,
                   reasoningEffort: get().reasoningEffort,
                   voiceMode: get().voiceMode,
+                  isVoiceSessionEnded: false,
                 }
                 
                 return {
@@ -448,6 +453,7 @@ export const useChatStore = create<ChatState>()(
               unsupportedModelError: null,
               selectedModel: preferredModel,
               reasoningEffort: defaultReasoningEffort,
+              isVoiceSessionEnded: false,
             })
           },
 
@@ -468,6 +474,7 @@ export const useChatStore = create<ChatState>()(
                 selectedModel: chatToLoad.model || 'gpt-4o-mini',
                 reasoningEffort: chatToLoad.reasoningEffort || get().getDefaultReasoningEffort(chatToLoad.model || 'gpt-4o-mini'),
                 voiceMode: chatToLoad.voiceMode || 'none',
+                isVoiceSessionEnded: chatToLoad.isVoiceSessionEnded || false,
                 // Update deprecated global streaming state
                 isStreaming: streamingSession?.isStreaming || false,
                 streamingMessage: streamingSession?.streamingMessage || '',
@@ -495,6 +502,7 @@ export const useChatStore = create<ChatState>()(
                   unsupportedModelError: null,
                   selectedModel: preferredModel,
                   reasoningEffort: defaultReasoningEffort,
+                  isVoiceSessionEnded: false,
                   isStreaming: false,
                   streamingMessage: '',
                   abortController: null,
@@ -544,7 +552,7 @@ export const useChatStore = create<ChatState>()(
 
           sendMessage: async (content: string) => {
             const apiKey = localStorage.getItem('openai_api_key')
-            const model = get().selectedModel
+            let model = get().selectedModel
             const reasoningEffort = get().reasoningEffort
             const devMode = get().devMode
             const currentChatId = get().currentChatId
@@ -552,6 +560,13 @@ export const useChatStore = create<ChatState>()(
             if (!apiKey) {
               set({ error: 'Please set your OpenAI API key in settings' })
               return
+            }
+
+            // If the current model is a realtime model, we can't use it for a standard chat message.
+            // This happens when a user ends a voice session and then continues to chat via text.
+            // We'll fall back to a default chat model for this message.
+            if (get().isRealtimeModel(model)) {
+              model = 'gpt-4o-mini'
             }
 
             // Clear previous errors
@@ -1049,6 +1064,23 @@ export const useChatStore = create<ChatState>()(
               return updateState
             })
           },
+
+          setVoiceSessionEnded: (ended: boolean) => {
+            set({ isVoiceSessionEnded: ended })
+            
+            // Update for current chat if there is one
+            const { currentChatId, chats } = get()
+            if (currentChatId) {
+              const currentChat = chats.find(c => c.id === currentChatId)
+              if (currentChat && currentChat.isVoiceSessionEnded !== ended) {
+                set(state => ({
+                  chats: state.chats.map(chat =>
+                    chat.id === currentChatId ? { ...chat, isVoiceSessionEnded: ended } : chat
+                  ),
+                }))
+              }
+            }
+          },
         }
       },
       {
@@ -1060,9 +1092,10 @@ export const useChatStore = create<ChatState>()(
           reasoningEffort: state.reasoningEffort,
           voiceMode: state.voiceMode,
           devMode: state.devMode,
-          // Don't persist streaming sessions
+          // Don't persist isVoiceSessionEnded at top level, it's transient
+          // It is persisted per-chat inside the `chats` array.
         }),
-        version: 4,
+        version: 5,
         migrate: (persistedState: any, version: number) => {
           if (version < 2) {
             if (persistedState && persistedState.chats) {
@@ -1088,6 +1121,16 @@ export const useChatStore = create<ChatState>()(
                 persistedState.chats = persistedState.chats.map((chat: any) => ({
                   ...chat,
                   voiceMode: 'none',
+                }))
+              }
+            }
+          }
+          if (version < 5) {
+            if (persistedState) {
+              if (persistedState.chats) {
+                persistedState.chats = persistedState.chats.map((chat: any) => ({
+                  ...chat,
+                  isVoiceSessionEnded: false,
                 }))
               }
             }

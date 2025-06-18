@@ -21,7 +21,9 @@ export function ChatInput() {
     error,
     currentChatId,
     voiceMode,
-    isRealtimeModel
+    isRealtimeModel,
+    isVoiceSessionEnded,
+    setVoiceSessionEnded,
   } = useChatStore()
 
   const { sendTextMessage, isConnected, connect } = useVoiceChat()
@@ -56,13 +58,19 @@ export function ChatInput() {
       
       // Use voice chat for text-to-voice with realtime models
       if (isRealtimeModel() && voiceMode === 'text-to-voice') {
-        console.log('Attempting to send via voice chat...', { isConnected: connectionRef.current })
+        // If the user manually ended the session, send as a regular message
+        if (isVoiceSessionEnded) {
+          await sendMessage(messageToSend)
+          setPreviousMessage('')
+          return
+        }
         
         try {
           // If not connected, connect first
           if (!connectionRef.current) {
             console.log('Not connected, establishing connection...')
             await connect()
+            setVoiceSessionEnded(false) // We just connected, so session is active
             console.log('Connection established.')
           }
           

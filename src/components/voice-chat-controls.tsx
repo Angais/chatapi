@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, MicOff, Phone, PhoneOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,7 @@ import { useVoiceChat } from '@/hooks/use-voice-chat'
 import { cn } from '@/lib/utils'
 
 export function VoiceChatControls() {
-  const { voiceMode, isRealtimeModel, messages } = useChatStore()
+  const { voiceMode, isRealtimeModel, messages, isVoiceSessionEnded, setVoiceSessionEnded } = useChatStore()
   const {
     isConnected,
     isRecording,
@@ -24,39 +24,37 @@ export function VoiceChatControls() {
   
   // Check if we should auto-initiate connection based on having messages
   const hasMessages = messages.length > 0
-  const [hasInitiatedConnection, setHasInitiatedConnection] = useState(hasMessages)
 
-  // Auto-initiate connection when switching to text-to-voice with existing messages
+  const handleConnect = useCallback(async () => {
+    try {
+      setIsConnecting(true)
+      setVoiceSessionEnded(false) // User is actively starting a session
+      await connect()
+    } catch (error) {
+      console.error('Failed to connect:', error)
+    } finally {
+      setIsConnecting(false)
+    }
+  }, [connect, setVoiceSessionEnded])
+
+  // Auto-initiate connection when loading a chat or switching to text-to-voice mode,
+  // but only if the user hasn't manually ended the session before.
   useEffect(() => {
-    if (voiceMode === 'text-to-voice' && hasMessages && !isConnected && !isConnecting && !hasInitiatedConnection) {
+    if (voiceMode === 'text-to-voice' && hasMessages && !isConnected && !isConnecting && !isVoiceSessionEnded) {
       handleConnect()
     }
-  }, [voiceMode, hasMessages, isConnected, isConnecting])
+  }, [voiceMode, hasMessages, isConnected, isConnecting, isVoiceSessionEnded, handleConnect])
 
   if (!isRealtimeModel() || voiceMode === 'none') {
     return null
   }
 
-  const handleConnect = async () => {
-    try {
-      setIsConnecting(true)
-      setHasInitiatedConnection(true)
-      await connect()
-    } catch (error) {
-      console.error('Failed to connect:', error)
-      setHasInitiatedConnection(false)
-    } finally {
-      setIsConnecting(false)
-    }
-  }
-
   const handleDisconnect = () => {
     disconnect()
-    setHasInitiatedConnection(false)
+    setVoiceSessionEnded(true)
   }
 
-  // Show controls if connected, connecting, or connection has been initiated
-  const shouldShowTextToVoiceControls = voiceMode === 'text-to-voice' && (isConnected || isConnecting || hasInitiatedConnection)
+  const isSessionActive = isConnected || isConnecting
 
   return (
     <motion.div
@@ -69,7 +67,7 @@ export function VoiceChatControls() {
       <div className="flex items-center gap-3">
         {/* Text-to-voice controls */}
         {voiceMode === 'text-to-voice' && (
-          shouldShowTextToVoiceControls ? (
+          isSessionActive ? (
             <>
               <Button
                 onClick={handleDisconnect}
@@ -108,7 +106,21 @@ export function VoiceChatControls() {
                 </motion.div>
               )}
             </>
+          ) : isVoiceSessionEnded ? (
+            // User has disconnected, so give them an option to start again.
+            <Button
+              onClick={handleConnect}
+              disabled={isConnecting}
+              className={cn(
+                "flex items-center gap-2 rounded-full px-4 py-2",
+                "bg-green-600 hover:bg-green-700 text-white"
+              )}
+            >
+              <Phone className="h-4 w-4" />
+              Start Voice Session
+            </Button>
           ) : (
+            // Default state for new chats or chats where session hasn't started.
             <div className="text-xs text-muted-foreground">
               Voice session will start when you send your first message
             </div>
