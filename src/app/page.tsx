@@ -188,7 +188,7 @@ export default function ChatPage() {
           )}
           
           <UnsupportedModelDisclaimer />
-          {/* Voice Chat Controls - only show once, above the input */}
+          {/* Voice Chat Controls - only show for realtime models with voice mode enabled */}
           <AnimatePresence>
             {isRealtimeModel() && voiceMode !== 'none' && (
               <VoiceChatControls />

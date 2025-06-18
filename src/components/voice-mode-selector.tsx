@@ -10,11 +10,10 @@ import {
 } from '@/components/ui/select'
 import * as SelectPrimitive from '@radix-ui/react-select'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, FileAudio } from 'lucide-react'
+import { Mic, FileAudio } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const voiceModeOptions = [
-  { value: 'none', label: 'Text Only', icon: MicOff },
   { value: 'text-to-voice', label: 'Text to Voice', icon: FileAudio },
   { value: 'voice-to-voice', label: 'Voice to Voice', icon: Mic },
 ]
@@ -44,6 +43,13 @@ export function VoiceModeSelector() {
     }
   }, [voiceMode, previousMode])
 
+  // If switching to realtime model and voice mode is 'none', default to 'text-to-voice'
+  useEffect(() => {
+    if (isRealtime && voiceMode === 'none') {
+      setVoiceMode('text-to-voice')
+    }
+  }, [isRealtime, voiceMode, setVoiceMode])
+
   if (!isRealtime) {
     return null
   }
@@ -58,7 +64,7 @@ export function VoiceModeSelector() {
       transition={{ duration: 0.2, ease: "easeOut" }}
     >
       <Select
-        value={voiceMode}
+        value={voiceMode === 'none' ? 'text-to-voice' : voiceMode}
         onValueChange={(value) => setVoiceMode(value as VoiceMode)}
       >
         <SelectPrimitive.Trigger
