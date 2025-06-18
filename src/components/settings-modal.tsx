@@ -20,9 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Eye, EyeOff, Loader2, Sun, Moon, Monitor } from 'lucide-react'
-import { useChatStore } from '@/stores/chat-store'
+import { Eye, EyeOff, Loader2, Sun, Moon, Monitor, Save } from 'lucide-react'
+import { useChatStore, VOICE_OPTIONS } from '@/stores/chat-store'
 import { useTheme } from '@/hooks/use-theme'
+import { motion } from 'framer-motion'
 
 interface Model {
   id: string
@@ -39,8 +40,21 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [apiKey, setApiKey] = useState('')
   const [showApiKey, setShowApiKey] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   
-  const { fetchModels, devMode, setDevMode } = useChatStore()
+  const { 
+    fetchModels, 
+    devMode, 
+    setDevMode, 
+    temperature, 
+    setTemperature, 
+    maxTokens, 
+    setMaxTokens,
+    voice,
+    setVoice,
+    voiceMode,
+    isRealtimeModel,
+  } = useChatStore()
   const { theme, setTheme } = useTheme()
 
   useEffect(() => {
@@ -53,6 +67,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   const handleSave = async () => {
     setIsSaving(true)
+    setSaveStatus('saving')
     
     try {
       // Save to localStorage
@@ -67,17 +82,35 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       
       // Close modal after short delay
       setTimeout(() => {
-        onOpenChange(false)
-        setIsSaving(false)
+        setSaveStatus('saved')
+        setTimeout(() => {
+          setSaveStatus('idle')
+          onOpenChange(false)
+        }, 1000)
       }, 500)
     } catch (error) {
       console.error('Error saving settings:', error)
       setIsSaving(false)
+      setSaveStatus('idle')
     }
   }
 
   const handleApiKeyChange = (value: string) => {
     setApiKey(value)
+  }
+
+  const handleTemperatureChange = (value: string) => {
+    const temp = parseFloat(value)
+    if (!isNaN(temp) && temp >= 0 && temp <= 2) {
+      setTemperature(temp)
+    }
+  }
+
+  const handleMaxTokensChange = (value: string) => {
+    const tokens = parseInt(value)
+    if (!isNaN(tokens) && tokens > 0) {
+      setMaxTokens(tokens)
+    }
   }
 
   const getThemeIcon = (themeName: string) => {
@@ -103,18 +136,22 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }
   }
 
+  // Check if we're in voice mode
+  const showVoiceSettings = isRealtimeModel() && voiceMode !== 'none'
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            Manage your OpenAI API key, theme and development options.
+            Configure your OpenAI API settings and chat preferences
           </DialogDescription>
         </DialogHeader>
         
-        <div className="grid gap-4 py-4">
-          <div className="grid gap-2">
+        <div className="space-y-6">
+          {/* API Key Section */}
+          <div className="space-y-2">
             <Label htmlFor="api-key">OpenAI API Key</Label>
             <div className="relative">
               <Input
@@ -126,100 +163,135 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 className="pr-10"
               />
               <Button
-                type="button"
                 variant="ghost"
                 size="icon"
-                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                className="absolute right-0 top-0 h-full px-3"
                 onClick={() => setShowApiKey(!showApiKey)}
               >
-                {showApiKey ? (
-                  <EyeOff className="h-4 w-4" />
-                ) : (
-                  <Eye className="h-4 w-4" />
-                )}
+                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Your API key is stored locally and never sent to our servers.
+            <p className="text-xs text-muted-foreground">
+              Your API key is stored locally and never sent to our servers
             </p>
           </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="theme">Theme</Label>
-            <Select value={theme} onValueChange={setTheme}>
-              <SelectTrigger>
-                <SelectValue>
-                  <div className="flex items-center">
-                    {getThemeIcon(theme)}
-                    {getThemeLabel(theme)}
-                  </div>
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="light">
-                  <div className="flex items-center">
-                    <Sun className="h-4 w-4 mr-2" />
-                    Light
-                  </div>
-                </SelectItem>
-                <SelectItem value="dark">
-                  <div className="flex items-center">
-                    <Moon className="h-4 w-4 mr-2" />
-                    Dark
-                  </div>
-                </SelectItem>
-                <SelectItem value="system">
-                  <div className="flex items-center">
-                    <Monitor className="h-4 w-4 mr-2" />
-                    System
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-sm text-muted-foreground">
-              Choose your preferred theme or use system default.
-            </p>
-          </div>
+          <div className="border-t pt-4" />
 
-          <div className="grid gap-2">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="dev-mode">Developer Mode</Label>
-                <p className="text-sm text-muted-foreground">
-                  Show technical information about API requests and responses
-                </p>
+          {/* Chat Settings Section */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold">Chat Settings</h3>
+            
+            {/* Temperature */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="temperature">Temperature</Label>
+                <span className="text-xs text-muted-foreground">{temperature}</span>
               </div>
-              <Switch
-                id="dev-mode"
-                checked={devMode}
-                onCheckedChange={setDevMode}
+              <Input
+                id="temperature"
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={temperature}
+                onChange={(e) => handleTemperatureChange(e.target.value)}
+                className="cursor-pointer"
               />
+              <p className="text-xs text-muted-foreground">
+                Controls randomness: 0 is focused, 2 is more creative
+              </p>
             </div>
+
+            {/* Max Tokens */}
+            <div className="space-y-2">
+              <Label htmlFor="max-tokens">Max Tokens</Label>
+              <Input
+                id="max-tokens"
+                type="number"
+                min="1"
+                max="4096"
+                value={maxTokens}
+                onChange={(e) => handleMaxTokensChange(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Maximum length of generated responses
+              </p>
+            </div>
+
+            {/* Voice Selection - Only show for voice modes */}
+            {showVoiceSettings && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="space-y-2"
+              >
+                <Label htmlFor="voice">Voice</Label>
+                <Select value={voice} onValueChange={setVoice}>
+                  <SelectTrigger id="voice">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {VOICE_OPTIONS.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Select the voice for audio responses
+                </p>
+              </motion.div>
+            )}
+          </div>
+
+          <div className="border-t pt-4" />
+
+          {/* Developer Mode */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <Label htmlFor="dev-mode" className="text-base">Developer Mode</Label>
+              <p className="text-xs text-muted-foreground">
+                Show technical details about API requests and responses
+              </p>
+            </div>
+            <Switch
+              id="dev-mode"
+              checked={devMode}
+              onCheckedChange={setDevMode}
+            />
+          </div>
+
+          {/* Save Button */}
+          <div className="flex justify-end pt-4">
+            <Button 
+              onClick={handleSave}
+              disabled={saveStatus !== 'idle'}
+            >
+              {saveStatus === 'saving' && (
+                <>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                    className="mr-2"
+                  >
+                    <Save className="h-4 w-4" />
+                  </motion.div>
+                  Saving...
+                </>
+              )}
+              {saveStatus === 'saved' && (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Saved!
+                </>
+              )}
+              {saveStatus === 'idle' && 'Save Settings'}
+            </Button>
           </div>
         </div>
-        
-        <DialogFooter>
-          <Button 
-            variant="outline" 
-            onClick={() => onOpenChange(false)}
-            disabled={isSaving}
-          >
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleSave}
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              'Save'
-            )}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

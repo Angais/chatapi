@@ -3,7 +3,7 @@ import OpenAI from 'openai'
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, apiKey, model, reasoningEffort, stream } = await request.json()
+    const { messages, apiKey, model, reasoningEffort, stream, temperature, maxTokens } = await request.json()
 
     if (!apiKey) {
       return NextResponse.json(
@@ -29,6 +29,10 @@ export async function POST(request: NextRequest) {
     // Check if this is a reasoning model or if reasoning effort is needed
     const needsReasoningEffort = ['o3', 'o3-pro', 'o4-mini'].includes(selectedModel) || reasoningEffortValue !== 'no-reasoning'
 
+    // Use provided temperature and maxTokens or defaults
+    const finalTemperature = temperature ?? 0.7
+    const finalMaxTokens = maxTokens ?? 1000
+
     // For streaming requests
     if (stream) {
       const encoder = new TextEncoder()
@@ -44,10 +48,10 @@ export async function POST(request: NextRequest) {
             }
 
             if (!needsReasoningEffort) {
-              completionParams.temperature = 0.7
-              completionParams.max_tokens = 1000
+              completionParams.temperature = finalTemperature
+              completionParams.max_tokens = finalMaxTokens
             } else {
-              completionParams.max_completion_tokens = 1000
+              completionParams.max_completion_tokens = finalMaxTokens
               if (reasoningEffortValue !== 'no-reasoning') {
                 completionParams.reasoning_effort = reasoningEffortValue
               }
@@ -76,12 +80,12 @@ export async function POST(request: NextRequest) {
                 }
 
                 if (error?.message?.includes("'max_tokens' is not supported")) {
-                  fallbackParams.max_completion_tokens = 1000
+                  fallbackParams.max_completion_tokens = finalMaxTokens
                 } else if (error?.message?.includes('reasoning_effort')) {
-                  fallbackParams.max_completion_tokens = 1000
+                  fallbackParams.max_completion_tokens = finalMaxTokens
                 } else {
-                  fallbackParams.temperature = 0.7
-                  fallbackParams.max_tokens = 1000
+                  fallbackParams.temperature = finalTemperature
+                  fallbackParams.max_tokens = finalMaxTokens
                 }
 
                                  const fallbackCompletion = await openai.chat.completions.create(fallbackParams) as any
@@ -129,8 +133,8 @@ export async function POST(request: NextRequest) {
         const completion = await openai.chat.completions.create({
           model: selectedModel,
           messages: messages,
-          temperature: 0.7,
-          max_tokens: 1000,
+          temperature: finalTemperature,
+          max_tokens: finalMaxTokens,
         })
 
         const responseMessage = completion.choices[0]?.message?.content || ''
@@ -165,7 +169,7 @@ export async function POST(request: NextRequest) {
     const completionParams: any = {
       model: selectedModel,
       messages: messages,
-      max_completion_tokens: 1000,
+      max_completion_tokens: finalMaxTokens,
     }
 
     // Add reasoning effort if it's not 'no-reasoning'
@@ -194,7 +198,7 @@ export async function POST(request: NextRequest) {
         const fallbackParams = {
           model: selectedModel,
           messages: messages,
-          max_completion_tokens: 1000,
+          max_completion_tokens: finalMaxTokens,
         }
 
         try {
@@ -214,8 +218,8 @@ export async function POST(request: NextRequest) {
           const standardParams = {
             model: selectedModel,
             messages: messages,
-            temperature: 0.7,
-            max_tokens: 1000,
+            temperature: finalTemperature,
+            max_tokens: finalMaxTokens,
           }
 
           try {

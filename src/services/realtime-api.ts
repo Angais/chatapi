@@ -37,6 +37,9 @@ export class RealtimeAPIService {
     try {
       const model = this.config.model || 'gpt-4o-realtime-preview'
       
+      // Get voice from chat store
+      const { voice } = useChatStore.getState()
+      
       // Create ephemeral session for security
       const sessionResponse = await fetch('/api/realtime-session', {
         method: 'POST',
@@ -46,7 +49,7 @@ export class RealtimeAPIService {
         },
         body: JSON.stringify({
           model,
-          voice: this.config.voice || 'alloy',
+          voice: voice || 'alloy', // Use voice from store
         }),
       })
 
@@ -91,7 +94,7 @@ export class RealtimeAPIService {
         type: 'session.update',
         session: {
           modalities: ['text', 'audio'], // Need both for audio output
-          voice: this.config.voice || 'alloy',
+          voice: useChatStore.getState().voice || 'alloy', // Use voice from store
           instructions: 'You are a helpful assistant.',
           input_audio_format: 'pcm16',
           output_audio_format: 'pcm16',
@@ -101,7 +104,7 @@ export class RealtimeAPIService {
             prefix_padding_ms: 300,
             silence_duration_ms: 500
           },
-          temperature: 0.8
+          temperature: useChatStore.getState().temperature // Use temperature from store
         }
       })
     }

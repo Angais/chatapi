@@ -124,6 +124,18 @@ interface StreamingSession {
   abortController: AbortController | null
 }
 
+// Voice options for Realtime API
+export const VOICE_OPTIONS = [
+  { id: 'alloy', name: 'Alloy' },
+  { id: 'ash', name: 'Ash' },
+  { id: 'ballad', name: 'Ballad' },
+  { id: 'coral', name: 'Coral' },
+  { id: 'echo', name: 'Echo' },
+  { id: 'sage', name: 'Sage' },
+  { id: 'shimmer', name: 'Shimmer' },
+  { id: 'verse', name: 'Verse' },
+]
+
 interface ChatState {
   // Current chat state
   currentChatId: string | null
@@ -154,6 +166,11 @@ interface ChatState {
   
   // Unsupported model state
   unsupportedModelError: string | null
+  
+  // Settings state
+  temperature: number
+  maxTokens: number
+  voice: string
   
   // Actions
   init: () => void
@@ -204,6 +221,11 @@ interface ChatState {
   updateStreamingSession: (chatId: string, updates: Partial<StreamingSession>) => void
   cleanupStreamingSession: (chatId: string) => void
   getStreamingChats: () => string[]
+  
+  // Settings actions
+  setTemperature: (temperature: number) => void
+  setMaxTokens: (maxTokens: number) => void
+  setVoice: (voice: string) => void
 }
 
 // Helper function to generate chat title from first message
@@ -261,6 +283,9 @@ export const useChatStore = create<ChatState>()(
           devMode: false,
           unsupportedModelError: null,
           streamingSessions: new Map(), // NEW
+          temperature: 0.7,
+          maxTokens: 1000,
+          voice: 'alloy',
 
           init: () => {
             const state = get()
@@ -268,6 +293,15 @@ export const useChatStore = create<ChatState>()(
               const { currentChatId, chats } = state
               let modelToSet = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
               let reasoningEffortToSet: ReasoningEffort = 'no-reasoning'
+              
+              // Load saved settings
+              const savedTemperature = localStorage.getItem('openai_temperature')
+              const savedMaxTokens = localStorage.getItem('openai_max_tokens')
+              const savedVoice = localStorage.getItem('openai_voice')
+              
+              if (savedTemperature) set({ temperature: parseFloat(savedTemperature) })
+              if (savedMaxTokens) set({ maxTokens: parseInt(savedMaxTokens) })
+              if (savedVoice) set({ voice: savedVoice })
     
               if (currentChatId) {
                 const currentChat = chats.find(c => c.id === currentChatId)
@@ -588,9 +622,9 @@ export const useChatStore = create<ChatState>()(
               sentToAPI: {
                 model,
                 messages: messagesToSend,
-                temperature: 0.7,
-                max_tokens: model.includes('o3') || model.includes('o4') ? undefined : 1000,
-                max_completion_tokens: model.includes('o3') || model.includes('o4') ? 1000 : undefined,
+                temperature: get().temperature,
+                max_tokens: model.includes('o3') || model.includes('o4') ? undefined : get().maxTokens,
+                max_completion_tokens: model.includes('o3') || model.includes('o4') ? get().maxTokens : undefined,
                 reasoning_effort: reasoningEffort !== 'no-reasoning' ? reasoningEffort : undefined,
                 timestamp: new Date().toISOString(),
                 stream: true,
@@ -654,6 +688,8 @@ export const useChatStore = create<ChatState>()(
                   model,
                   reasoningEffort,
                   stream: true,
+                  temperature: get().temperature,
+                  maxTokens: get().maxTokens,
                 }),
                 signal: controller.signal,
               })
@@ -1082,6 +1118,21 @@ export const useChatStore = create<ChatState>()(
               }
             }
           },
+
+          setTemperature: (temperature: number) => {
+            set({ temperature })
+            localStorage.setItem('openai_temperature', temperature.toString())
+          },
+
+          setMaxTokens: (maxTokens: number) => {
+            set({ maxTokens })
+            localStorage.setItem('openai_max_tokens', maxTokens.toString())
+          },
+
+          setVoice: (voice: string) => {
+            set({ voice })
+            localStorage.setItem('openai_voice', voice)
+          },
         }
       },
       {
@@ -1093,8 +1144,9 @@ export const useChatStore = create<ChatState>()(
           reasoningEffort: state.reasoningEffort,
           voiceMode: state.voiceMode,
           devMode: state.devMode,
-          // Don't persist isVoiceSessionEnded at top level, it's transient
-          // It is persisted per-chat inside the `chats` array.
+          temperature: state.temperature,
+          maxTokens: state.maxTokens,
+          voice: state.voice,
         }),
         version: 5,
         migrate: (persistedState: any, version: number) => {
