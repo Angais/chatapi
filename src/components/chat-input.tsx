@@ -113,7 +113,7 @@ export function ChatInput() {
     }
   }
 
-  const isDisabled = !message.trim() || (isLoading && !isStreaming)
+  const isDisabled = !isStreaming && (!message.trim() || isLoading)
 
   return (
     <motion.div
