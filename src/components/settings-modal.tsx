@@ -20,10 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Eye, EyeOff, Loader2, Sun, Moon, Monitor, Save } from 'lucide-react'
-import { useChatStore, VOICE_OPTIONS } from '@/stores/chat-store'
+import { Eye, EyeOff, Loader2, Sun, Moon, Monitor, Save, ChevronDown, ChevronRight } from 'lucide-react'
+import { useChatStore, VOICE_OPTIONS, VAD_TYPES, TRANSCRIPTION_MODELS } from '@/stores/chat-store'
 import { useTheme } from '@/hooks/use-theme'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 
 interface Model {
   id: string
@@ -41,6 +41,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [showApiKey, setShowApiKey] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [showAdvancedVoice, setShowAdvancedVoice] = useState(false)
   
   const { 
     fetchModels, 
@@ -54,6 +55,18 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     setVoice,
     voiceMode,
     isRealtimeModel,
+    vadType,
+    setVadType,
+    vadThreshold,
+    setVadThreshold,
+    vadPrefixPadding,
+    setVadPrefixPadding,
+    vadSilenceDuration,
+    setVadSilenceDuration,
+    transcriptionModel,
+    setTranscriptionModel,
+    transcriptionLanguage,
+    setTranscriptionLanguage,
   } = useChatStore()
   const { theme, setTheme } = useTheme()
 
@@ -141,7 +154,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[550px] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
@@ -221,29 +234,164 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
             {/* Voice Selection - Only show for voice modes */}
             {showVoiceSettings && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="space-y-2"
-              >
-                <Label htmlFor="voice">Voice</Label>
-                <Select value={voice} onValueChange={setVoice}>
-                  <SelectTrigger id="voice">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {VOICE_OPTIONS.map((option) => (
-                      <SelectItem key={option.id} value={option.id}>
-                        {option.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Select the voice for audio responses
-                </p>
-              </motion.div>
+              <>
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-2"
+                >
+                  <Label htmlFor="voice">Voice</Label>
+                  <Select value={voice} onValueChange={setVoice}>
+                    <SelectTrigger id="voice">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {VOICE_OPTIONS.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Select the voice for audio responses
+                  </p>
+                </motion.div>
+
+                {/* Advanced Voice Settings Toggle */}
+                <div 
+                  className="flex items-center gap-2 cursor-pointer select-none py-2"
+                  onClick={() => setShowAdvancedVoice(!showAdvancedVoice)}
+                >
+                  <motion.div
+                    animate={{ rotate: showAdvancedVoice ? 90 : 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </motion.div>
+                  <span className="text-sm font-medium">Advanced Voice Settings</span>
+                </div>
+
+                {/* Advanced Voice Settings */}
+                <AnimatePresence>
+                  {showAdvancedVoice && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="space-y-4 pl-6"
+                    >
+                      {/* VAD Type */}
+                      <div className="space-y-2">
+                        <Label htmlFor="vad-type">Voice Activity Detection Type</Label>
+                        <Select value={vadType} onValueChange={(value) => setVadType(value as 'server_vad' | 'semantic_vad')}>
+                          <SelectTrigger id="vad-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {VAD_TYPES.map((type) => (
+                              <SelectItem key={type.id} value={type.id}>
+                                <div>
+                                  <div>{type.name}</div>
+                                  <div className="text-xs text-muted-foreground">{type.description}</div>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* VAD Threshold */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="vad-threshold">Detection Threshold</Label>
+                          <span className="text-xs text-muted-foreground">{vadThreshold}</span>
+                        </div>
+                        <Input
+                          id="vad-threshold"
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.1"
+                          value={vadThreshold}
+                          onChange={(e) => setVadThreshold(parseFloat(e.target.value))}
+                          className="cursor-pointer"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Higher = requires louder audio to activate
+                        </p>
+                      </div>
+
+                      {/* Prefix Padding */}
+                      <div className="space-y-2">
+                        <Label htmlFor="prefix-padding">Prefix Padding (ms)</Label>
+                        <Input
+                          id="prefix-padding"
+                          type="number"
+                          min="0"
+                          max="1000"
+                          step="50"
+                          value={vadPrefixPadding}
+                          onChange={(e) => setVadPrefixPadding(parseInt(e.target.value) || 300)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Audio to include before speech is detected
+                        </p>
+                      </div>
+
+                      {/* Silence Duration */}
+                      <div className="space-y-2">
+                        <Label htmlFor="silence-duration">Silence Duration (ms)</Label>
+                        <Input
+                          id="silence-duration"
+                          type="number"
+                          min="100"
+                          max="2000"
+                          step="100"
+                          value={vadSilenceDuration}
+                          onChange={(e) => setVadSilenceDuration(parseInt(e.target.value) || 500)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          How long to wait before ending speech
+                        </p>
+                      </div>
+
+                      {/* Transcription Model */}
+                      <div className="space-y-2">
+                        <Label htmlFor="transcription-model">Transcription Model</Label>
+                        <Select value={transcriptionModel} onValueChange={setTranscriptionModel}>
+                          <SelectTrigger id="transcription-model">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {TRANSCRIPTION_MODELS.map((model) => (
+                              <SelectItem key={model.id} value={model.id}>
+                                {model.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Language */}
+                      <div className="space-y-2">
+                        <Label htmlFor="language">Language Code</Label>
+                        <Input
+                          id="language"
+                          type="text"
+                          placeholder="en"
+                          value={transcriptionLanguage}
+                          onChange={(e) => setTranscriptionLanguage(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          ISO-639-1 format (e.g., en, es, fr, de, ja, zh)
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </>
             )}
           </div>
 

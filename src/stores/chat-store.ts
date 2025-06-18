@@ -136,6 +136,19 @@ export const VOICE_OPTIONS = [
   { id: 'verse', name: 'Verse' },
 ]
 
+// VAD type options
+export const VAD_TYPES = [
+  { id: 'server_vad', name: 'Server VAD', description: 'Uses silence detection' },
+  { id: 'semantic_vad', name: 'Semantic VAD', description: 'Uses AI to detect when you\'re done speaking' },
+]
+
+// Transcription models
+export const TRANSCRIPTION_MODELS = [
+  { id: 'gpt-4o-transcribe', name: 'GPT-4o Transcribe' },
+  { id: 'gpt-4o-mini-transcribe', name: 'GPT-4o Mini Transcribe' },
+  { id: 'whisper-1', name: 'Whisper' },
+]
+
 interface ChatState {
   // Current chat state
   currentChatId: string | null
@@ -171,6 +184,14 @@ interface ChatState {
   temperature: number
   maxTokens: number
   voice: string
+  // VAD settings
+  vadType: 'server_vad' | 'semantic_vad'
+  vadThreshold: number
+  vadPrefixPadding: number
+  vadSilenceDuration: number
+  // Transcription settings
+  transcriptionModel: string
+  transcriptionLanguage: string
   
   // Actions
   init: () => void
@@ -226,6 +247,14 @@ interface ChatState {
   setTemperature: (temperature: number) => void
   setMaxTokens: (maxTokens: number) => void
   setVoice: (voice: string) => void
+  // VAD settings actions
+  setVadType: (type: 'server_vad' | 'semantic_vad') => void
+  setVadThreshold: (threshold: number) => void
+  setVadPrefixPadding: (padding: number) => void
+  setVadSilenceDuration: (duration: number) => void
+  // Transcription settings actions
+  setTranscriptionModel: (model: string) => void
+  setTranscriptionLanguage: (language: string) => void
 }
 
 // Helper function to generate chat title from first message
@@ -286,6 +315,12 @@ export const useChatStore = create<ChatState>()(
           temperature: 0.7,
           maxTokens: 1000,
           voice: 'alloy',
+          vadType: 'server_vad',
+          vadThreshold: 0.5,
+          vadPrefixPadding: 300,
+          vadSilenceDuration: 500,
+          transcriptionModel: 'gpt-4o-transcribe',
+          transcriptionLanguage: 'en',
 
           init: () => {
             const state = get()
@@ -298,10 +333,22 @@ export const useChatStore = create<ChatState>()(
               const savedTemperature = localStorage.getItem('openai_temperature')
               const savedMaxTokens = localStorage.getItem('openai_max_tokens')
               const savedVoice = localStorage.getItem('openai_voice')
+              const savedVadType = localStorage.getItem('openai_vad_type')
+              const savedVadThreshold = localStorage.getItem('openai_vad_threshold')
+              const savedVadPrefixPadding = localStorage.getItem('openai_vad_prefix_padding')
+              const savedVadSilenceDuration = localStorage.getItem('openai_vad_silence_duration')
+              const savedTranscriptionModel = localStorage.getItem('openai_transcription_model')
+              const savedTranscriptionLanguage = localStorage.getItem('openai_transcription_language')
               
               if (savedTemperature) set({ temperature: parseFloat(savedTemperature) })
               if (savedMaxTokens) set({ maxTokens: parseInt(savedMaxTokens) })
               if (savedVoice) set({ voice: savedVoice })
+              if (savedVadType) set({ vadType: savedVadType as 'server_vad' | 'semantic_vad' })
+              if (savedVadThreshold) set({ vadThreshold: parseFloat(savedVadThreshold) })
+              if (savedVadPrefixPadding) set({ vadPrefixPadding: parseInt(savedVadPrefixPadding) })
+              if (savedVadSilenceDuration) set({ vadSilenceDuration: parseInt(savedVadSilenceDuration) })
+              if (savedTranscriptionModel) set({ transcriptionModel: savedTranscriptionModel })
+              if (savedTranscriptionLanguage) set({ transcriptionLanguage: savedTranscriptionLanguage })
     
               if (currentChatId) {
                 const currentChat = chats.find(c => c.id === currentChatId)
@@ -1133,6 +1180,36 @@ export const useChatStore = create<ChatState>()(
             set({ voice })
             localStorage.setItem('openai_voice', voice)
           },
+
+          setVadType: (vadType: 'server_vad' | 'semantic_vad') => {
+            set({ vadType })
+            localStorage.setItem('openai_vad_type', vadType)
+          },
+
+          setVadThreshold: (vadThreshold: number) => {
+            set({ vadThreshold })
+            localStorage.setItem('openai_vad_threshold', vadThreshold.toString())
+          },
+
+          setVadPrefixPadding: (vadPrefixPadding: number) => {
+            set({ vadPrefixPadding })
+            localStorage.setItem('openai_vad_prefix_padding', vadPrefixPadding.toString())
+          },
+
+          setVadSilenceDuration: (vadSilenceDuration: number) => {
+            set({ vadSilenceDuration })
+            localStorage.setItem('openai_vad_silence_duration', vadSilenceDuration.toString())
+          },
+
+          setTranscriptionModel: (transcriptionModel: string) => {
+            set({ transcriptionModel })
+            localStorage.setItem('openai_transcription_model', transcriptionModel)
+          },
+
+          setTranscriptionLanguage: (transcriptionLanguage: string) => {
+            set({ transcriptionLanguage })
+            localStorage.setItem('openai_transcription_language', transcriptionLanguage)
+          },
         }
       },
       {
@@ -1147,6 +1224,12 @@ export const useChatStore = create<ChatState>()(
           temperature: state.temperature,
           maxTokens: state.maxTokens,
           voice: state.voice,
+          vadType: state.vadType,
+          vadThreshold: state.vadThreshold,
+          vadPrefixPadding: state.vadPrefixPadding,
+          vadSilenceDuration: state.vadSilenceDuration,
+          transcriptionModel: state.transcriptionModel,
+          transcriptionLanguage: state.transcriptionLanguage,
         }),
         version: 5,
         migrate: (persistedState: any, version: number) => {

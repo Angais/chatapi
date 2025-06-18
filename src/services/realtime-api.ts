@@ -90,21 +90,27 @@ export class RealtimeAPIService {
       this.config.onConnectionChange?.(true)
       
       // Configure session for voice-to-voice with both text and audio
+      const state = useChatStore.getState()
       this.sendEvent({
         type: 'session.update',
         session: {
-          modalities: ['text', 'audio'], // Need both for audio output
-          voice: useChatStore.getState().voice || 'alloy', // Use voice from store
+          modalities: ['text', 'audio'],
+          voice: state.voice || 'alloy',
           instructions: 'You are a helpful assistant.',
           input_audio_format: 'pcm16',
           output_audio_format: 'pcm16',
           turn_detection: {
-            type: 'server_vad',
-            threshold: 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 500
+            type: state.vadType,
+            threshold: state.vadThreshold,
+            prefix_padding_ms: state.vadPrefixPadding,
+            silence_duration_ms: state.vadSilenceDuration
           },
-          temperature: useChatStore.getState().temperature // Use temperature from store
+          temperature: state.temperature,
+          // Add transcription settings
+          input_audio_transcription: {
+            model: state.transcriptionModel,
+            language: state.transcriptionLanguage,
+          }
         }
       })
     }
