@@ -58,6 +58,7 @@ export const MODEL_PRESETS = [
 // Realtime models for voice
 export const REALTIME_MODELS = [
   { id: 'gpt-4o-realtime-preview', displayName: 'GPT-4o Realtime' },
+  { id: 'gpt-4o-mini-realtime-preview', displayName: 'GPT-4o-mini Realtime' },
 ]
 
 // Modelos que soportan reasoning effort
