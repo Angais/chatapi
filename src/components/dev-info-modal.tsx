@@ -55,7 +55,7 @@ export function DevInfoModal({ message, open, onOpenChange }: DevInfoModalProps)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] w-full max-h-[80vh] overflow-y-auto overflow-x-hidden">
+      <DialogContent className="sm:max-w-[600px] w-full max-h-[80vh] overflow-y-auto overflow-x-hidden" data-dev-info>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Info className="w-4 h-4" />

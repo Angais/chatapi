@@ -97,10 +97,15 @@ export function VoiceModeSelector() {
           className={cn(
             'flex h-8 w-auto items-center justify-between rounded-md border px-3 py-2 text-xs gap-2',
             'ring-offset-background placeholder:text-muted-foreground',
-            'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
             'disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
             'transition-all duration-200 select-none cursor-pointer'
           )}
+          onMouseDown={(e) => {
+            if (e.detail > 1) {
+              e.preventDefault()
+            }
+          }}
         >
           <SelectValue />
           <SelectPrimitive.Icon asChild>
@@ -138,6 +143,9 @@ export function VoiceModeSelector() {
               className="relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md w-48"
               position="popper"
               sideOffset={4}
+              onCloseAutoFocus={(e) => {
+                e.preventDefault()
+              }}
             >
               <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
                 <svg width="12" height="12" viewBox="0 0 12 12" className="rotate-180 opacity-50">

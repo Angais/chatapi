@@ -231,9 +231,9 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
               >
                 <div className="space-y-3">
                   {isUser ? (
-                    <span className="whitespace-pre-wrap break-words">{content}</span>
+                    <span className="whitespace-pre-wrap break-words" data-message-content>{content}</span>
                   ) : (
-                    <div className="w-full">
+                    <div className="w-full" data-message-content>
                       {isStreaming ? (
                         // Para streaming, renderizar como texto plano con cursor al final
                         <div className="whitespace-pre-wrap break-words">
@@ -242,40 +242,42 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                         </div>
                       ) : (
                         // Para mensajes completos, usar ReactMarkdown
-                        <ReactMarkdown
-                          components={{
-                            code: ({ node, className, children, ...props }) => {
-                              const match = /language-(\w+)/.exec(className || '')
-                              return match ? (
-                                <CodeBlock className={className}>
-                                  {String(children).replace(/\n$/, '')}
-                                </CodeBlock>
-                              ) : (
-                                <code 
-                                  className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-all"
-                                  {...props}
-                                >
-                                  {children}
-                                </code>
-                              )
-                            },
-                            pre: ({ children }) => <>{children}</>,
-                            h1: ({ children }) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
-                            h2: ({ children }) => <h2 className="text-lg font-bold mb-2">{children}</h2>,
-                            h3: ({ children }) => <h3 className="text-base font-bold mb-2">{children}</h3>,
-                            ul: ({ children }) => <ul className="list-disc list-inside space-y-1 ml-4">{children}</ul>,
-                            ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 ml-4">{children}</ol>,
-                            li: ({ children }) => <li className="text-base">{children}</li>,
-                            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                            strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-                            em: ({ children }) => <em className="italic">{children}</em>,
-                            blockquote: ({ children }) => (
-                              <blockquote className="border-l-4 border-muted pl-4 italic">{children}</blockquote>
-                            ),
-                          }}
-                        >
-                          {content}
-                        </ReactMarkdown>
+                        <div className="markdown-content">
+                          <ReactMarkdown
+                            components={{
+                              code: ({ node, className, children, ...props }) => {
+                                const match = /language-(\w+)/.exec(className || '')
+                                return match ? (
+                                  <CodeBlock className={className}>
+                                    {String(children).replace(/\n$/, '')}
+                                  </CodeBlock>
+                                ) : (
+                                  <code 
+                                    className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-all"
+                                    {...props}
+                                  >
+                                    {children}
+                                  </code>
+                                )
+                              },
+                              pre: ({ children }) => <>{children}</>,
+                              h1: ({ children }) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
+                              h2: ({ children }) => <h2 className="text-lg font-bold mb-2">{children}</h2>,
+                              h3: ({ children }) => <h3 className="text-base font-bold mb-2">{children}</h3>,
+                              ul: ({ children }) => <ul className="list-disc list-inside space-y-1 ml-4">{children}</ul>,
+                              ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 ml-4">{children}</ol>,
+                              li: ({ children }) => <li className="text-base">{children}</li>,
+                              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                              strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                              em: ({ children }) => <em className="italic">{children}</em>,
+                              blockquote: ({ children }) => (
+                                <blockquote className="border-l-4 border-muted pl-4 italic">{children}</blockquote>
+                              ),
+                            }}
+                          >
+                            {content}
+                          </ReactMarkdown>
+                        </div>
                       )}
                     </div>
                   )}

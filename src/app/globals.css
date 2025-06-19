@@ -65,6 +65,10 @@
 
 * {
   border-color: rgb(var(--border));
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 
 body {
@@ -353,4 +357,34 @@ body {
 
 .subtle-animate-out {
   animation: subtle-fade-out 0.08s ease-in;
+}
+
+/* Permitir selección de texto solo donde sea apropiado */
+input,
+textarea,
+[contenteditable="true"],
+.selectable-text,
+/* Mensajes de chat - permitir selección */
+[data-message-content],
+/* Contenido de markdown en mensajes */
+.markdown-content p,
+.markdown-content span,
+.markdown-content li,
+.markdown-content code,
+.markdown-content pre,
+/* Código en bloques */
+pre code,
+code,
+/* Modal de información de desarrollo */
+[data-dev-info],
+[data-dev-info] *,
+[data-dev-info] div,
+[data-dev-info] span,
+[data-dev-info] p,
+[data-dev-info] h3,
+[data-dev-info] h4 {
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
 }

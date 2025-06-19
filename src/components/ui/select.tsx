@@ -19,9 +19,14 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1 cursor-pointer',
+      'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1 cursor-pointer',
       className
     )}
+    onMouseDown={(e) => {
+      if (e.detail > 1) {
+        e.preventDefault()
+      }
+    }}
     {...props}
   >
     {children}
@@ -70,7 +75,7 @@ SelectScrollDownButton.displayName =
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = 'popper', ...props }, ref) => (
+>(({ className, children, position = 'popper', onCloseAutoFocus, ...props }, ref) => (
   <SelectPrimitive.Portal>
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -91,6 +96,12 @@ const SelectContent = React.forwardRef<
         )}
         position={position}
         sideOffset={4}
+        onCloseAutoFocus={(e) => {
+          e.preventDefault()
+          if (typeof onCloseAutoFocus === 'function') {
+            ;(onCloseAutoFocus as any)(e)
+          }
+        }}
         {...props}
       >
         <SelectScrollUpButton />
