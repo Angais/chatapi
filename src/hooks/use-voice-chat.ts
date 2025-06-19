@@ -17,6 +17,7 @@ export function useVoiceChat() {
     selectedModel, 
     addMessage,
     isRealtimeModel,
+    setUnsupportedModelError,
   } = useChatStore()
 
   // Initialize services
@@ -66,12 +67,12 @@ export function useVoiceChat() {
   const connect = useCallback(async () => {
     const apiKey = localStorage.getItem('openai_api_key')
     if (!apiKey) {
-      console.error('No API key found in localStorage')
+      console.error('❌ No API key found in localStorage')
       throw new Error('No API key found. Please set your OpenAI API key in settings.')
     }
 
     const currentVoiceMode = useChatStore.getState().voiceMode
-    console.log('Connecting to Realtime API...', { voiceMode: currentVoiceMode, selectedModel })
+    console.log('🎯 Connecting to Realtime API...', { voiceMode: currentVoiceMode, selectedModel })
 
     if (currentVoiceMode === 'voice-to-voice') {
       const hasAccess = await checkPermission()
@@ -80,28 +81,14 @@ export function useVoiceChat() {
       }
     }
 
-    // Return a promise that resolves when connected
-    return new Promise<void>((resolve, reject) => {
-      let connectionTimeout: NodeJS.Timeout | null = null
-      
-      // Set a timeout for connection
-      connectionTimeout = setTimeout(() => {
-        reject(new Error('Connection timeout'))
-      }, 10000) // 10 second timeout
-      
+    try {
       realtimeService.current = new RealtimeAPIService({
         apiKey,
         model: selectedModel,
         voice: 'alloy',
         onConnectionChange: (connected) => {
-          console.log('Connection status changed:', connected)
+          console.log('🔄 Connection status changed:', connected)
           setIsConnected(connected)
-          if (connected) {
-            if (connectionTimeout) {
-              clearTimeout(connectionTimeout)
-            }
-            resolve() // Resolve the promise when connected
-          }
         },
         onAudioData: (audioData) => {
           if (audioPlayer.current) {
@@ -118,22 +105,17 @@ export function useVoiceChat() {
           }
         },
         onError: (error) => {
-          console.error('Realtime API error:', error)
+          console.error('❌ Realtime API error:', error)
           setIsConnected(false)
-          if (connectionTimeout) {
-            clearTimeout(connectionTimeout)
-          }
-          reject(error)
         }
       })
 
-      realtimeService.current.connect().catch((error) => {
-        if (connectionTimeout) {
-          clearTimeout(connectionTimeout)
-        }
-        reject(error)
-      })
-    })
+      await realtimeService.current.connect()
+      console.log('✅ Successfully connected to Realtime API')
+    } catch (error) {
+      console.error('❌ Failed to connect to Realtime API:', error)
+      throw error
+    }
   }, [selectedModel, checkPermission])
 
   // Send text message for text-to-voice mode
@@ -168,6 +150,10 @@ export function useVoiceChat() {
     if (audioPlayer.current) {
       audioPlayer.current.stop()
     }
+    
+    // Clear any temperature warnings when disconnecting
+    setUnsupportedModelError(null)
+    
     setIsConnected(false)
     setIsRecording(false)
     setCurrentTranscript('')

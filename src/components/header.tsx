@@ -33,6 +33,7 @@ export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
             size="icon"
             onClick={onToggleSidebar}
             title="Toggle sidebar"
+            className="cursor-pointer"
           >
             <Menu className="h-4 w-4" />
           </Button>
@@ -42,6 +43,7 @@ export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
             size="icon"
             onClick={createNewChat}
             title="New chat"
+            className="cursor-pointer"
           >
             <Plus className="h-4 w-4" />
           </Button>
@@ -60,6 +62,7 @@ export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
           <Button
             variant="ghost"
             size="icon"
+            className="cursor-pointer"
           >
             <Search className="h-4 w-4" />
           </Button>
@@ -68,6 +71,7 @@ export function Header({ onToggleSidebar, isSidebarOpen }: HeaderProps) {
             variant="ghost"
             size="icon"
             onClick={() => setSettingsOpen(true)}
+            className="cursor-pointer"
           >
             <Settings className="h-4 w-4" />
           </Button>

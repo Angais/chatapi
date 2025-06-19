@@ -38,7 +38,7 @@ export function DevInfoModal({ message, open, onOpenChange }: DevInfoModalProps)
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs"
+          className="h-7 px-2 text-xs cursor-pointer"
           onClick={() => handleCopy(content, section)}
         >
           <Copy className="w-3 h-3 mr-1" />

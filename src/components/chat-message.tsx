@@ -157,7 +157,7 @@ function CopyButton({
       <Button
         variant="ghost"
         size="sm"
-        className={className}
+        className={`${className} cursor-pointer`}
         onClick={handleCopy}
         disabled={disabled}
       >
@@ -296,7 +296,7 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs"
+                      className="h-7 px-2 text-xs cursor-pointer"
                       onClick={() => setShowDevModal(true)}
                       title="Development information"
                       disabled={isStreaming || !content.trim()}
@@ -321,7 +321,7 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs"
+                      className="h-7 px-2 text-xs cursor-pointer"
                       onClick={(e) => {
                         e.stopPropagation()
                         setShowDevModal(true)

@@ -99,7 +99,7 @@ export function VoiceModeSelector() {
             'ring-offset-background placeholder:text-muted-foreground',
             'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
             'disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
-            'transition-all duration-200 select-none'
+            'transition-all duration-200 select-none cursor-pointer'
           )}
         >
           <SelectValue />

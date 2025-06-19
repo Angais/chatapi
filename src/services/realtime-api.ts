@@ -36,11 +36,14 @@ export class RealtimeAPIService {
 
     try {
       const model = this.config.model || 'gpt-4o-realtime-preview'
+      console.log('🚀 Starting connection to Realtime API with model:', model)
       
       // Get voice from chat store
       const { voice } = useChatStore.getState()
+      console.log('🎤 Using voice:', voice)
       
       // Create ephemeral session for security
+      console.log('🔑 Creating ephemeral session...')
       const sessionResponse = await fetch('/api/realtime-session', {
         method: 'POST',
         headers: {
@@ -55,13 +58,16 @@ export class RealtimeAPIService {
 
       if (!sessionResponse.ok) {
         const errorData = await sessionResponse.json()
+        console.error('❌ Failed to create ephemeral session:', errorData)
         throw new Error(errorData.error || 'Failed to create session')
       }
 
       const sessionData = await sessionResponse.json()
       const ephemeralKey = sessionData.client_secret.value
+      console.log('✅ Ephemeral session created successfully')
 
       const url = `wss://api.openai.com/v1/realtime?model=${model}`
+      console.log('🌐 Connecting to WebSocket:', url)
       
       this.ws = new WebSocket(url, [
         'realtime',
@@ -69,19 +75,61 @@ export class RealtimeAPIService {
         'openai-beta.realtime-v1'
       ])
 
-      this.setupEventHandlers()
-      
-      const voiceMode = useChatStore.getState().voiceMode
-      if (voiceMode === 'voice-to-voice') {
-        await this.setupAudioInput()
-      }
+      // Add connection timeout
+      return new Promise<void>((resolve, reject) => {
+        let connectionTimeout: NodeJS.Timeout | null = null
+        let isResolved = false
+
+        const cleanup = () => {
+          if (connectionTimeout) {
+            clearTimeout(connectionTimeout)
+            connectionTimeout = null
+          }
+        }
+
+        const resolveOnce = () => {
+          if (!isResolved) {
+            isResolved = true
+            cleanup()
+            resolve()
+          }
+        }
+
+        const rejectOnce = (error: any) => {
+          if (!isResolved) {
+            isResolved = true
+            cleanup()
+            reject(error)
+          }
+        }
+
+        // Set 10 second timeout
+        connectionTimeout = setTimeout(() => {
+          console.error('⏰ Connection timeout after 10 seconds')
+          if (this.ws) {
+            this.ws.close()
+          }
+          rejectOnce(new Error('Connection timeout after 10 seconds'))
+        }, 10000)
+
+        this.setupEventHandlers(resolveOnce, rejectOnce)
+        
+        const voiceMode = useChatStore.getState().voiceMode
+        if (voiceMode === 'voice-to-voice') {
+          this.setupAudioInput().catch((error) => {
+            console.error('❌ Failed to setup audio input:', error)
+            rejectOnce(error)
+          })
+        }
+      })
     } catch (error) {
-      console.error('Failed to connect to Realtime API:', error)
+      console.error('❌ Failed to connect to Realtime API:', error)
       this.config.onError?.(error)
+      throw error
     }
   }
 
-  private setupEventHandlers() {
+  private setupEventHandlers(resolve: () => void, reject: (error: any) => void) {
     if (!this.ws) return
 
     this.ws.onopen = () => {
@@ -91,7 +139,44 @@ export class RealtimeAPIService {
       
       // Configure session for voice-to-voice with both text and audio
       const state = useChatStore.getState()
-      this.sendEvent({
+      
+      // Adjust temperature to valid range for Realtime API (0.6 - 1.2)
+      let adjustedTemperature = state.temperature
+      let temperatureWarning = ''
+      
+      if (state.temperature < 0.6) {
+        adjustedTemperature = 0.6
+        temperatureWarning = `Temperature adjusted from ${state.temperature} to 0.6 (minimum for Realtime API)`
+      } else if (state.temperature > 1.2) {
+        adjustedTemperature = 1.2
+        temperatureWarning = `Temperature adjusted from ${state.temperature} to 1.2 (maximum for Realtime API)`
+      }
+      
+      // Show warning if temperature was adjusted
+      if (temperatureWarning) {
+        console.warn('⚠️ ' + temperatureWarning)
+        // Use the existing unsupported model disclaimer system to show the warning
+        const { setUnsupportedModelError } = useChatStore.getState()
+        setUnsupportedModelError(temperatureWarning)
+      }
+      
+      // Build turn_detection configuration based on VAD type
+      let turnDetection: any
+      if (state.vadType === 'semantic_vad') {
+        turnDetection = {
+          type: 'semantic_vad',
+          eagerness: state.vadEagerness || 'medium'
+        }
+      } else {
+        turnDetection = {
+          type: 'server_vad',
+          threshold: state.vadThreshold,
+          prefix_padding_ms: state.vadPrefixPadding,
+          silence_duration_ms: state.vadSilenceDuration
+        }
+      }
+      
+      const sessionUpdateMessage = {
         type: 'session.update',
         session: {
           modalities: ['text', 'audio'],
@@ -99,34 +184,35 @@ export class RealtimeAPIService {
           instructions: 'You are a helpful assistant.',
           input_audio_format: 'pcm16',
           output_audio_format: 'pcm16',
-          turn_detection: {
-            type: state.vadType,
-            threshold: state.vadThreshold,
-            prefix_padding_ms: state.vadPrefixPadding,
-            silence_duration_ms: state.vadSilenceDuration
-          },
-          temperature: state.temperature,
+          turn_detection: turnDetection,
+          temperature: adjustedTemperature, // Use adjusted temperature
           // Add transcription settings
           input_audio_transcription: {
             model: state.transcriptionModel,
             language: state.transcriptionLanguage,
           }
         }
-      })
+      }
+      
+      console.log('📤 Sending session.update message:', JSON.stringify(sessionUpdateMessage, null, 2))
+      this.sendEvent(sessionUpdateMessage)
+      resolve()
     }
 
     this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
+        console.log('📥 Received event:', data.type, data)
         this.handleServerEvent(data)
       } catch (error) {
-        console.error('Failed to parse server event:', error)
+        console.error('❌ Failed to parse server event:', error, 'Raw data:', event.data)
       }
     }
 
     this.ws.onerror = (error) => {
       console.error('WebSocket error:', error)
       this.config.onError?.(error)
+      reject(error)
     }
 
     this.ws.onclose = () => {
@@ -134,6 +220,7 @@ export class RealtimeAPIService {
       this.isConnected = false
       this.config.onConnectionChange?.(false)
       this.cleanup()
+      reject(new Error('Disconnected from Realtime API'))
     }
   }
 
@@ -142,8 +229,11 @@ export class RealtimeAPIService {
     
     switch (event.type) {
       case 'session.created':
+        console.log('✅ Session created successfully:', event)
+        break
+        
       case 'session.updated':
-        console.log('Session event:', event.type)
+        console.log('✅ Session updated successfully:', event)  
         break
         
       case 'response.audio.delta':
@@ -176,7 +266,11 @@ export class RealtimeAPIService {
         break
         
       case 'error':
-        console.error('Server error:', event.error || event)
+        console.error('❌ Server error details:', JSON.stringify(event, null, 2))
+        console.error('❌ Error type:', event.error?.type)
+        console.error('❌ Error code:', event.error?.code)
+        console.error('❌ Error message:', event.error?.message)
+        console.error('❌ Error param:', event.error?.param)
         this.config.onError?.(event.error || event)
         break
         
@@ -184,7 +278,7 @@ export class RealtimeAPIService {
         // Ignore common events to reduce console noise
         if (!['response.text.delta', 'response.text.done', 'response.content_part.added', 
              'response.content_part.done', 'rate_limits.updated'].includes(event.type)) {
-          console.log('Unhandled event:', event.type)
+          console.log('🔍 Unhandled event:', event.type, event)
         }
     }
   }
@@ -236,7 +330,10 @@ export class RealtimeAPIService {
 
   sendEvent(event: any) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log('📡 Sending event:', event.type, this.ws.readyState === WebSocket.OPEN ? '(connected)' : '(not connected)')
       this.ws.send(JSON.stringify(event))
+    } else {
+      console.error('❌ Cannot send event - WebSocket not ready:', event.type, 'ReadyState:', this.ws?.readyState)
     }
   }
 

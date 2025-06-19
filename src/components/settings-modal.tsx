@@ -68,6 +68,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     setVadPrefixPadding,
     vadSilenceDuration,
     setVadSilenceDuration,
+    vadEagerness,
+    setVadEagerness,
     transcriptionModel,
     setTranscriptionModel,
     transcriptionLanguage,
@@ -220,7 +222,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="absolute right-0 top-0 h-full px-3"
+                className="absolute right-0 top-0 h-full px-3 cursor-pointer"
                 onClick={() => setShowApiKey(!showApiKey)}
               >
                 {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -285,7 +287,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 >
                   <Label htmlFor="voice" className="block mb-3">Voice</Label>
                   <Select value={voice} onValueChange={setVoice} onOpenChange={handleSelectOpenChange}>
-                    <SelectTrigger id="voice">
+                    <SelectTrigger id="voice" className="cursor-pointer">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent position="popper">
@@ -296,7 +298,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: index * 0.03, duration: 0.15 }}
                         >
-                          <SelectItem value={option.id}>
+                          <SelectItem value={option.id} className="cursor-pointer">
                             <motion.span
                               className="select-none"
                               whileHover={{ x: 2 }}
@@ -336,7 +338,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       <div className="space-y-3">
                         <Label htmlFor="vad-type" className="block mb-3">Voice Activity Detection Type</Label>
                         <Select value={vadType} onValueChange={(value) => setVadType(value as 'server_vad' | 'semantic_vad')} onOpenChange={handleSelectOpenChange}>
-                          <SelectTrigger id="vad-type">
+                          <SelectTrigger id="vad-type" className="cursor-pointer">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent position="popper">
@@ -347,7 +349,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: index * 0.03, duration: 0.15 }}
                               >
-                                <SelectItem value={type.id}>
+                                <SelectItem value={type.id} className="cursor-pointer">
                                   <motion.span
                                     className="select-none"
                                     whileHover={{ x: 2 }}
@@ -362,66 +364,112 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                         </Select>
                       </div>
 
-                      {/* VAD Threshold */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <Label htmlFor="vad-threshold" className="block mb-2">Detection Threshold</Label>
-                          <span className="text-xs text-muted-foreground">{vadThreshold}</span>
+                      {/* Eagerness for Semantic VAD */}
+                      {vadType === 'semantic_vad' && (
+                        <div className="space-y-3">
+                          <Label htmlFor="vad-eagerness" className="block mb-3">Response Eagerness</Label>
+                          <Select value={vadEagerness} onValueChange={setVadEagerness} onOpenChange={handleSelectOpenChange}>
+                            <SelectTrigger id="vad-eagerness" className="cursor-pointer">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent position="popper">
+                              {[
+                                { id: 'low', name: 'Low', description: 'Lets users take their time' },
+                                { id: 'medium', name: 'Medium', description: 'Balanced approach' },
+                                { id: 'high', name: 'High', description: 'Responds as quickly as possible' },
+                                { id: 'auto', name: 'Auto', description: 'Equivalent to medium' }
+                              ].map((option, index) => (
+                                <motion.div
+                                  key={option.id}
+                                  initial={{ opacity: 0, x: -10 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: index * 0.03, duration: 0.15 }}
+                                >
+                                  <SelectItem value={option.id} className="cursor-pointer">
+                                    <motion.span
+                                      className="select-none"
+                                      whileHover={{ x: 2 }}
+                                      transition={{ duration: 0.1 }}
+                                    >
+                                      {option.name}
+                                    </motion.span>
+                                  </SelectItem>
+                                </motion.div>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            Controls how quickly the AI responds in semantic VAD mode
+                          </p>
                         </div>
-                        <Input
-                          id="vad-threshold"
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.1"
-                          value={vadThreshold}
-                          onChange={(e) => setVadThreshold(parseFloat(e.target.value))}
-                          className="cursor-pointer"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Higher = requires louder audio to activate
-                        </p>
-                      </div>
+                      )}
 
-                      {/* Prefix Padding */}
-                      <div className="space-y-3">
-                        <Label htmlFor="prefix-padding" className="block mb-3">Prefix Padding (ms)</Label>
-                        <Input
-                          id="prefix-padding"
-                          type="number"
-                          min="0"
-                          max="1000"
-                          step="50"
-                          value={vadPrefixPadding}
-                          onChange={(e) => setVadPrefixPadding(parseInt(e.target.value) || 300)}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Audio to include before speech is detected
-                        </p>
-                      </div>
+                      {/* VAD Threshold - Only for Server VAD */}
+                      {vadType === 'server_vad' && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="vad-threshold" className="block mb-2">Detection Threshold</Label>
+                            <span className="text-xs text-muted-foreground">{vadThreshold}</span>
+                          </div>
+                          <Input
+                            id="vad-threshold"
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            value={vadThreshold}
+                            onChange={(e) => setVadThreshold(parseFloat(e.target.value))}
+                            className="cursor-pointer"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Higher = requires louder audio to activate
+                          </p>
+                        </div>
+                      )}
 
-                      {/* Silence Duration */}
-                      <div className="space-y-3">
-                        <Label htmlFor="silence-duration" className="block mb-3">Silence Duration (ms)</Label>
-                        <Input
-                          id="silence-duration"
-                          type="number"
-                          min="100"
-                          max="2000"
-                          step="100"
-                          value={vadSilenceDuration}
-                          onChange={(e) => setVadSilenceDuration(parseInt(e.target.value) || 500)}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          How long to wait before ending speech
-                        </p>
-                      </div>
+                      {/* Prefix Padding - Only for Server VAD */}
+                      {vadType === 'server_vad' && (
+                        <div className="space-y-3">
+                          <Label htmlFor="prefix-padding" className="block mb-3">Prefix Padding (ms)</Label>
+                          <Input
+                            id="prefix-padding"
+                            type="number"
+                            min="0"
+                            max="1000"
+                            step="50"
+                            value={vadPrefixPadding}
+                            onChange={(e) => setVadPrefixPadding(parseInt(e.target.value) || 300)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Audio to include before speech is detected
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Silence Duration - Only for Server VAD */}
+                      {vadType === 'server_vad' && (
+                        <div className="space-y-3">
+                          <Label htmlFor="silence-duration" className="block mb-3">Silence Duration (ms)</Label>
+                          <Input
+                            id="silence-duration"
+                            type="number"
+                            min="100"
+                            max="2000"
+                            step="100"
+                            value={vadSilenceDuration}
+                            onChange={(e) => setVadSilenceDuration(parseInt(e.target.value) || 500)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            How long to wait before ending speech
+                          </p>
+                        </div>
+                      )}
 
                       {/* Transcription Model */}
                       <div className="space-y-3">
                         <Label htmlFor="transcription-model" className="block mb-3">Transcription Model</Label>
                         <Select value={transcriptionModel} onValueChange={setTranscriptionModel} onOpenChange={handleSelectOpenChange}>
-                          <SelectTrigger id="transcription-model">
+                          <SelectTrigger id="transcription-model" className="cursor-pointer">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent position="popper">
@@ -432,7 +480,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: index * 0.03, duration: 0.15 }}
                               >
-                                <SelectItem value={model.id}>
+                                <SelectItem value={model.id} className="cursor-pointer">
                                   <motion.span
                                     className="select-none"
                                     whileHover={{ x: 2 }}
@@ -482,6 +530,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
               id="dev-mode"
               checked={devMode}
               onCheckedChange={setDevMode}
+              className="cursor-pointer"
             />
           </div>
 
@@ -490,6 +539,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <Button 
               onClick={handleSave}
               disabled={saveStatus !== 'idle'}
+              className="cursor-pointer"
             >
               {saveStatus === 'saving' && (
                 <>

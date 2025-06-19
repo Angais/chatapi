@@ -189,6 +189,7 @@ interface ChatState {
   vadThreshold: number
   vadPrefixPadding: number
   vadSilenceDuration: number
+  vadEagerness: 'low' | 'medium' | 'high' | 'auto'
   // Transcription settings
   transcriptionModel: string
   transcriptionLanguage: string
@@ -252,6 +253,7 @@ interface ChatState {
   setVadThreshold: (threshold: number) => void
   setVadPrefixPadding: (padding: number) => void
   setVadSilenceDuration: (duration: number) => void
+  setVadEagerness: (eagerness: 'low' | 'medium' | 'high' | 'auto') => void
   // Transcription settings actions
   setTranscriptionModel: (model: string) => void
   setTranscriptionLanguage: (language: string) => void
@@ -319,6 +321,7 @@ export const useChatStore = create<ChatState>()(
           vadThreshold: 0.5,
           vadPrefixPadding: 300,
           vadSilenceDuration: 500,
+          vadEagerness: 'medium',
           transcriptionModel: 'gpt-4o-transcribe',
           transcriptionLanguage: 'en',
 
@@ -337,6 +340,7 @@ export const useChatStore = create<ChatState>()(
               const savedVadThreshold = localStorage.getItem('openai_vad_threshold')
               const savedVadPrefixPadding = localStorage.getItem('openai_vad_prefix_padding')
               const savedVadSilenceDuration = localStorage.getItem('openai_vad_silence_duration')
+              const savedVadEagerness = localStorage.getItem('openai_vad_eagerness')
               const savedTranscriptionModel = localStorage.getItem('openai_transcription_model')
               const savedTranscriptionLanguage = localStorage.getItem('openai_transcription_language')
               
@@ -347,6 +351,7 @@ export const useChatStore = create<ChatState>()(
               if (savedVadThreshold) set({ vadThreshold: parseFloat(savedVadThreshold) })
               if (savedVadPrefixPadding) set({ vadPrefixPadding: parseInt(savedVadPrefixPadding) })
               if (savedVadSilenceDuration) set({ vadSilenceDuration: parseInt(savedVadSilenceDuration) })
+              if (savedVadEagerness) set({ vadEagerness: savedVadEagerness as 'low' | 'medium' | 'high' | 'auto' })
               if (savedTranscriptionModel) set({ transcriptionModel: savedTranscriptionModel })
               if (savedTranscriptionLanguage) set({ transcriptionLanguage: savedTranscriptionLanguage })
     
@@ -1201,6 +1206,11 @@ export const useChatStore = create<ChatState>()(
             localStorage.setItem('openai_vad_silence_duration', vadSilenceDuration.toString())
           },
 
+          setVadEagerness: (vadEagerness: 'low' | 'medium' | 'high' | 'auto') => {
+            set({ vadEagerness })
+            localStorage.setItem('openai_vad_eagerness', vadEagerness)
+          },
+
           setTranscriptionModel: (transcriptionModel: string) => {
             set({ transcriptionModel })
             localStorage.setItem('openai_transcription_model', transcriptionModel)
@@ -1228,6 +1238,7 @@ export const useChatStore = create<ChatState>()(
           vadThreshold: state.vadThreshold,
           vadPrefixPadding: state.vadPrefixPadding,
           vadSilenceDuration: state.vadSilenceDuration,
+          vadEagerness: state.vadEagerness,
           transcriptionModel: state.transcriptionModel,
           transcriptionLanguage: state.transcriptionLanguage,
         }),

@@ -166,7 +166,7 @@ export const ChatInput = forwardRef<ChatInputRef>((_, ref) => {
             {/* Send/Stop button */}
             <Button
               size="icon"
-              className={`flex-shrink-0 h-8 w-8 ${isStreaming || isLoading ? 'bg-red-600 hover:bg-red-700 text-white' : ''}`}
+              className={`flex-shrink-0 h-8 w-8 cursor-pointer ${isStreaming || isLoading ? 'bg-red-600 hover:bg-red-700 text-white' : ''}`}
               disabled={isDisabled}
               onClick={isStreaming || isLoading ? handleStop : handleSubmit}
             >

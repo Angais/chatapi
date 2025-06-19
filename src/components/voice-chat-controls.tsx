@@ -120,7 +120,7 @@ export function VoiceChatControls() {
               <Button
                 onClick={handleDisconnect}
                 variant="outline"
-                className="flex items-center gap-2 rounded-full px-4 py-2 border-red-500 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                className="flex items-center gap-2 rounded-full px-4 py-2 border-red-500 text-red-600 hover:bg-red-50 dark:hover:bg-red-950 cursor-pointer"
                 disabled={isConnecting}
               >
                 <PhoneOff className="h-4 w-4" />
@@ -174,7 +174,7 @@ export function VoiceChatControls() {
               onClick={handleConnect}
               disabled={isConnecting}
               className={cn(
-                "flex items-center gap-2 rounded-full px-4 py-2",
+                "flex items-center gap-2 rounded-full px-4 py-2 cursor-pointer",
                 "bg-green-600 hover:bg-green-700 text-white",
                 "dark:bg-green-600 dark:hover:bg-green-700 dark:text-white"
               )}
@@ -198,7 +198,7 @@ export function VoiceChatControls() {
                 onClick={handleConnect}
                 disabled={isConnecting || hasPermission === false}
                 className={cn(
-                  "flex items-center gap-2 rounded-full px-4 py-2",
+                  "flex items-center gap-2 rounded-full px-4 py-2 cursor-pointer",
                   "bg-green-600 hover:bg-green-700 text-white",
                   "dark:bg-green-600 dark:hover:bg-green-700 dark:text-white"
                 )}
@@ -220,7 +220,7 @@ export function VoiceChatControls() {
                 <Button
                   onClick={toggleRecording}
                   className={cn(
-                    "rounded-full w-12 h-12 p-0",
+                    "rounded-full w-12 h-12 p-0 cursor-pointer",
                     isRecording 
                       ? "bg-red-600 hover:bg-red-700 animate-pulse" 
                       : "bg-blue-600 hover:bg-blue-700"
@@ -237,7 +237,7 @@ export function VoiceChatControls() {
                 <Button
                   onClick={handleDisconnect}
                   variant="outline"
-                  className="rounded-full"
+                  className="rounded-full cursor-pointer"
                 >
                   <PhoneOff className="h-4 w-4" />
                 </Button>

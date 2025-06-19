@@ -105,7 +105,7 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-7 w-7"
+                            className="h-7 w-7 cursor-pointer"
                             onClick={() => handleSaveEdit(chat.id)}
                           >
                             <Check className="h-3 w-3" />
@@ -113,7 +113,7 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-7 w-7"
+                            className="h-7 w-7 cursor-pointer"
                             onClick={handleCancelEdit}
                           >
                             <X className="h-3 w-3" />
@@ -122,7 +122,7 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                       ) : (
                         <button
                           onClick={() => loadChat(chat.id)}
-                          className="w-full text-left p-3 pr-20"
+                          className="w-full text-left p-3 pr-20 cursor-pointer"
                         >
                           <div className="flex items-start gap-3">
                             <div className="relative">
@@ -158,7 +158,7 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-7 w-7"
+                            className="h-7 w-7 cursor-pointer"
                             onClick={(e) => {
                               e.stopPropagation()
                               handleEdit(chat.id, chat.title)
@@ -169,7 +169,7 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-7 w-7 hover:text-destructive"
+                            className="h-7 w-7 hover:text-destructive cursor-pointer"
                             onClick={(e) => {
                               e.stopPropagation()
                               deleteChat(chat.id)
