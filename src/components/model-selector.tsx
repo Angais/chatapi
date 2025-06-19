@@ -23,7 +23,7 @@ const CustomSelectTrigger = ({ className, children, showChevron, ...props }: {
 } & React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>) => (
   <SelectPrimitive.Trigger
     className={cn(
-      'flex h-8 w-auto items-center justify-between rounded-md border px-3 py-2 text-xs gap-2 ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1 transition-all duration-200',
+      'flex h-8 w-auto items-center justify-between rounded-md border px-3 py-2 text-xs gap-2 ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1 transition-all duration-200 select-none',
       className
     )}
     {...props}
@@ -31,12 +31,7 @@ const CustomSelectTrigger = ({ className, children, showChevron, ...props }: {
     {children}
     {showChevron && (
       <SelectPrimitive.Icon asChild>
-        <motion.div
-          animate={{ rotate: props['aria-expanded'] ? 180 : 0 }}
-          transition={{ duration: 0.2, ease: "easeInOut" }}
-        >
-          <ChevronDown className="h-3 w-3 opacity-50" />
-        </motion.div>
+        <ChevronDown className="h-3 w-3 opacity-50" />
       </SelectPrimitive.Icon>
     )}
   </SelectPrimitive.Trigger>
@@ -94,7 +89,7 @@ const AnimatedModelName = ({ modelName, isLoading }: { modelName: string, isLoad
         ease: "easeInOut",
         opacity: { duration: isChanging ? 0.1 : 0.15 }
       }}
-      className="truncate max-w-[8rem] sm:max-w-none"
+      className="truncate max-w-[8rem] sm:max-w-none select-none"
       title={displayName} // Show full name on hover
     >
       {getTruncatedName(displayName)}
@@ -173,19 +168,30 @@ export function ModelSelector() {
   // Resetear el estado de showAllModels cuando se abre el dropdown
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open)
-    if (open) {
-      // Don't auto-close showAllModels if selected model is in other models
-      if (!isSelectedModelInOtherModels()) {
-        setShowAllModels(false)
-      }
-      // Los presets deben animarse al abrir el dropdown (unless auto-expanding)
-      if (!isSelectedModelInOtherModels()) {
-        setShouldAnimatePresets(true)
-      }
-    } else {
-      // Reset animation state when closing
-      setShouldAnimatePresets(true)
-      setShowAllModels(false)
+    
+    // Quitar focus cuando se cierra el selector
+    if (!open) {
+      // Usar requestAnimationFrame para asegurar que el DOM se haya actualizado
+      requestAnimationFrame(() => {
+        // Buscar el trigger específico del selector que se acaba de cerrar
+        const activeElement = document.activeElement as HTMLElement
+        if (activeElement) {
+          // Si es un elemento relacionado con select, hacer blur
+          if (activeElement.hasAttribute('data-radix-select-trigger') || 
+              activeElement.getAttribute('role') === 'combobox' ||
+              activeElement.hasAttribute('aria-haspopup')) {
+            activeElement.blur()
+          }
+        }
+        
+        // También buscar elementos que puedan haber quedado focused
+        const focusedSelects = document.querySelectorAll('[data-radix-select-trigger]:focus, [role="combobox"]:focus')
+        focusedSelects.forEach(el => {
+          if (el instanceof HTMLElement) {
+            el.blur()
+          }
+        })
+      })
     }
   }
 
@@ -210,13 +216,7 @@ export function ModelSelector() {
 
   return (
     <div className="flex items-center gap-2">
-      <motion.div
-        initial={{ opacity: 0, y: -5 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1, duration: 0.2 }}
-        whileHover={{ scale: 1.01 }}
-        whileTap={{ scale: 0.99 }}
-      >
+      <div>
         <Select
           value={selectedModel}
           onValueChange={handleModelChange}
@@ -232,10 +232,27 @@ export function ModelSelector() {
               />
             </SelectValue>
           </CustomSelectTrigger>
-          <SelectContent 
-            position="popper" 
-            className="w-64 max-h-80"
-          >
+          <SelectPrimitive.Portal>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{
+                type: "spring",
+                damping: 25,
+                stiffness: 400,
+                duration: 0.1
+              }}
+            >
+              <SelectPrimitive.Content
+                className="relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md w-64 max-h-80"
+                position="popper"
+                sideOffset={4}
+              >
+                <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
+                  <ChevronDown className="h-4 w-4 rotate-180" />
+                </SelectPrimitive.ScrollUpButton>
+                <SelectPrimitive.Viewport className="p-1">
             {/* Presets disponibles */}
             {availablePresets.map((preset, index) => (
               <motion.div
@@ -247,6 +264,7 @@ export function ModelSelector() {
               >
                 <SelectItem value={preset.id}>
                   <motion.span
+                    className="select-none"
                     whileHover={{ x: 2 }}
                     transition={{ duration: 0.1 }}
                   >
@@ -271,7 +289,7 @@ export function ModelSelector() {
               >
                 <SelectItem value={model.id}>
                   <motion.div
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 select-none"
                     whileHover={{ x: 2 }}
                     transition={{ duration: 0.1 }}
                   >
@@ -288,22 +306,14 @@ export function ModelSelector() {
             )}
             
             {otherModels.length > 0 && (
-              <>
-                <motion.div
+                            <>
+                <div
                   className="flex items-center gap-2 px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent/50 cursor-pointer rounded-sm transition-colors select-none"
                   onClick={handleShowAllModelsToggle}
-                  whileHover={{ x: 2 }}
-                  whileTap={{ scale: 0.98 }}
-                  transition={{ duration: 0.1 }}
                 >
-                  <motion.div
-                    animate={{ rotate: showAllModels ? 90 : 0 }}
-                    transition={{ duration: 0.2, ease: "easeInOut" }}
-                  >
-                    <ChevronRight className="h-3 w-3" />
-                  </motion.div>
+                  <ChevronRight className="h-3 w-3" />
                   {showAllModels ? 'Hide all models' : 'Show all models'}
-                </motion.div>
+                </div>
                 
                 <AnimatePresence>
                   {showAllModels && (
@@ -335,6 +345,7 @@ export function ModelSelector() {
                         >
                           <SelectItem value={model.id} className="pl-6">
                             <motion.span
+                              className="select-none"
                               whileHover={{ x: 2 }}
                               transition={{ duration: 0.1 }}
                             >
@@ -348,9 +359,15 @@ export function ModelSelector() {
                 </AnimatePresence>
               </>
             )}
-          </SelectContent>
+                </SelectPrimitive.Viewport>
+                <SelectPrimitive.ScrollDownButton className="flex cursor-default items-center justify-center py-1">
+                  <ChevronDown className="h-4 w-4" />
+                </SelectPrimitive.ScrollDownButton>
+              </SelectPrimitive.Content>
+            </motion.div>
+          </SelectPrimitive.Portal>
         </Select>
-      </motion.div>
+      </div>
       
       <ReasoningEffortSelector />
     </div>

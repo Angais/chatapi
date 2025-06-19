@@ -175,7 +175,8 @@ export function VoiceChatControls() {
               disabled={isConnecting}
               className={cn(
                 "flex items-center gap-2 rounded-full px-4 py-2",
-                "bg-green-600 hover:bg-green-700 text-white"
+                "bg-green-600 hover:bg-green-700 text-white",
+                "dark:bg-green-600 dark:hover:bg-green-700 dark:text-white"
               )}
             >
               <Phone className="h-4 w-4" />
@@ -183,7 +184,7 @@ export function VoiceChatControls() {
             </Button>
           ) : (
             // Default state for new chats or chats where session hasn't started.
-            <div className="text-xs text-muted-foreground">
+            <div className="text-xs text-muted-foreground select-none">
               Voice session will start when you send your first message
             </div>
           )
@@ -198,7 +199,8 @@ export function VoiceChatControls() {
                 disabled={isConnecting || hasPermission === false}
                 className={cn(
                   "flex items-center gap-2 rounded-full px-4 py-2",
-                  "bg-green-600 hover:bg-green-700 text-white"
+                  "bg-green-600 hover:bg-green-700 text-white",
+                  "dark:bg-green-600 dark:hover:bg-green-700 dark:text-white"
                 )}
               >
                 {isConnecting ? (

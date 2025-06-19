@@ -59,11 +59,8 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
           animate={{ x: 0 }}
           exit={{ x: -320 }}
           transition={{ 
-            x: {
-              type: "tween",
-              duration: isOpen ? 0.1 : 0,
-              ease: [0.25, 0.1, 0.25, 1]
-            }
+            duration: 0.25,
+            ease: [0.25, 0.1, 0.25, 1]
           }}
           className="fixed left-0 top-14 bottom-0 w-80 bg-background border-r border-border z-40 overflow-hidden flex flex-col"
         >

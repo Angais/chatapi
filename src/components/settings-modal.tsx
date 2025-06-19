@@ -20,10 +20,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import * as SelectPrimitive from '@radix-ui/react-select'
 import { Eye, EyeOff, Loader2, Sun, Moon, Monitor, Save, ChevronDown, ChevronRight } from 'lucide-react'
 import { useChatStore, VOICE_OPTIONS, VAD_TYPES, TRANSCRIPTION_MODELS } from '@/stores/chat-store'
 import { useTheme } from '@/hooks/use-theme'
 import { motion, AnimatePresence } from 'framer-motion'
+import { cn } from '@/lib/utils'
 
 interface Model {
   id: string
@@ -35,6 +37,9 @@ interface SettingsModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
+
+// Custom SelectContent with subtle animations for settings modal
+// Ya no necesitamos CustomSelectContent, usaremos SelectContent normal
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [apiKey, setApiKey] = useState('')
@@ -75,6 +80,15 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     if (open) {
       const storedKey = localStorage.getItem('openai_api_key') || ''
       setApiKey(storedKey)
+      
+      // Force blur the API key input to prevent auto-selection
+      setTimeout(() => {
+        const apiKeyInput = document.getElementById('api-key') as HTMLInputElement
+        if (apiKeyInput) {
+          apiKeyInput.blur()
+          document.body.focus()
+        }
+      }, 100)
     }
   }, [open])
 
@@ -152,6 +166,32 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   // Check if we're in voice mode
   const showVoiceSettings = isRealtimeModel() && voiceMode !== 'none'
 
+  // Handler para quitar focus de selectores
+  const handleSelectOpenChange = (open: boolean) => {
+    if (!open) {
+      requestAnimationFrame(() => {
+        // Buscar el trigger específico del selector que se acaba de cerrar
+        const activeElement = document.activeElement as HTMLElement
+        if (activeElement) {
+          // Si es un elemento relacionado con select, hacer blur
+          if (activeElement.hasAttribute('data-radix-select-trigger') || 
+              activeElement.getAttribute('role') === 'combobox' ||
+              activeElement.hasAttribute('aria-haspopup')) {
+            activeElement.blur()
+          }
+        }
+        
+        // También buscar elementos que puedan haber quedado focused
+        const focusedSelects = document.querySelectorAll('[data-radix-select-trigger]:focus, [role="combobox"]:focus')
+        focusedSelects.forEach(el => {
+          if (el instanceof HTMLElement) {
+            el.blur()
+          }
+        })
+      })
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[550px] max-h-[80vh] overflow-y-auto">
@@ -164,8 +204,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         
         <div className="space-y-6">
           {/* API Key Section */}
-          <div className="space-y-2">
-            <Label htmlFor="api-key">OpenAI API Key</Label>
+          <div className="space-y-3">
+            <Label htmlFor="api-key" className="block mb-3">OpenAI API Key</Label>
             <div className="relative">
               <Input
                 id="api-key"
@@ -174,6 +214,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 onChange={(e) => handleApiKeyChange(e.target.value)}
                 placeholder="sk-..."
                 className="pr-10"
+                autoFocus={false}
+                tabIndex={-1}
               />
               <Button
                 variant="ghost"
@@ -196,9 +238,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <h3 className="text-sm font-semibold">Chat Settings</h3>
             
             {/* Temperature */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label htmlFor="temperature">Temperature</Label>
+                <Label htmlFor="temperature" className="block mb-2">Temperature</Label>
                 <span className="text-xs text-muted-foreground">{temperature}</span>
               </div>
               <Input
@@ -217,8 +259,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             </div>
 
             {/* Max Tokens */}
-            <div className="space-y-2">
-              <Label htmlFor="max-tokens">Max Tokens</Label>
+            <div className="space-y-3">
+              <Label htmlFor="max-tokens" className="block mb-3">Max Tokens</Label>
               <Input
                 id="max-tokens"
                 type="number"
@@ -239,18 +281,31 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="space-y-2"
+                  className="space-y-3"
                 >
-                  <Label htmlFor="voice">Voice</Label>
-                  <Select value={voice} onValueChange={setVoice}>
+                  <Label htmlFor="voice" className="block mb-3">Voice</Label>
+                  <Select value={voice} onValueChange={setVoice} onOpenChange={handleSelectOpenChange}>
                     <SelectTrigger id="voice">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
-                      {VOICE_OPTIONS.map((option) => (
-                        <SelectItem key={option.id} value={option.id}>
-                          {option.name}
-                        </SelectItem>
+                    <SelectContent position="popper">
+                      {VOICE_OPTIONS.map((option, index) => (
+                        <motion.div
+                          key={option.id}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.03, duration: 0.15 }}
+                        >
+                          <SelectItem value={option.id}>
+                            <motion.span
+                              className="select-none"
+                              whileHover={{ x: 2 }}
+                              transition={{ duration: 0.1 }}
+                            >
+                              {option.name}
+                            </motion.span>
+                          </SelectItem>
+                        </motion.div>
                       ))}
                     </SelectContent>
                   </Select>
@@ -264,12 +319,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   className="flex items-center gap-2 cursor-pointer select-none py-2"
                   onClick={() => setShowAdvancedVoice(!showAdvancedVoice)}
                 >
-                  <motion.div
-                    animate={{ rotate: showAdvancedVoice ? 90 : 0 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </motion.div>
+                  <ChevronRight className="h-4 w-4" />
                   <span className="text-sm font-medium">Advanced Voice Settings</span>
                 </div>
 
@@ -283,29 +333,39 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       className="space-y-4 pl-6"
                     >
                       {/* VAD Type */}
-                      <div className="space-y-2">
-                        <Label htmlFor="vad-type">Voice Activity Detection Type</Label>
-                        <Select value={vadType} onValueChange={(value) => setVadType(value as 'server_vad' | 'semantic_vad')}>
+                      <div className="space-y-3">
+                        <Label htmlFor="vad-type" className="block mb-3">Voice Activity Detection Type</Label>
+                        <Select value={vadType} onValueChange={(value) => setVadType(value as 'server_vad' | 'semantic_vad')} onOpenChange={handleSelectOpenChange}>
                           <SelectTrigger id="vad-type">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
-                            {VAD_TYPES.map((type) => (
-                              <SelectItem key={type.id} value={type.id}>
-                                <div>
-                                  <div>{type.name}</div>
-                                  <div className="text-xs text-muted-foreground">{type.description}</div>
-                                </div>
-                              </SelectItem>
+                          <SelectContent position="popper">
+                            {VAD_TYPES.map((type, index) => (
+                              <motion.div
+                                key={type.id}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: index * 0.03, duration: 0.15 }}
+                              >
+                                <SelectItem value={type.id}>
+                                  <motion.span
+                                    className="select-none"
+                                    whileHover={{ x: 2 }}
+                                    transition={{ duration: 0.1 }}
+                                  >
+                                    {type.name} ({type.id === 'server_vad' ? 'Silence detection' : 'AI detection'})
+                                  </motion.span>
+                                </SelectItem>
+                              </motion.div>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
 
                       {/* VAD Threshold */}
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <Label htmlFor="vad-threshold">Detection Threshold</Label>
+                          <Label htmlFor="vad-threshold" className="block mb-2">Detection Threshold</Label>
                           <span className="text-xs text-muted-foreground">{vadThreshold}</span>
                         </div>
                         <Input
@@ -324,8 +384,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       </div>
 
                       {/* Prefix Padding */}
-                      <div className="space-y-2">
-                        <Label htmlFor="prefix-padding">Prefix Padding (ms)</Label>
+                      <div className="space-y-3">
+                        <Label htmlFor="prefix-padding" className="block mb-3">Prefix Padding (ms)</Label>
                         <Input
                           id="prefix-padding"
                           type="number"
@@ -341,8 +401,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       </div>
 
                       {/* Silence Duration */}
-                      <div className="space-y-2">
-                        <Label htmlFor="silence-duration">Silence Duration (ms)</Label>
+                      <div className="space-y-3">
+                        <Label htmlFor="silence-duration" className="block mb-3">Silence Duration (ms)</Label>
                         <Input
                           id="silence-duration"
                           type="number"
@@ -358,25 +418,38 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       </div>
 
                       {/* Transcription Model */}
-                      <div className="space-y-2">
-                        <Label htmlFor="transcription-model">Transcription Model</Label>
-                        <Select value={transcriptionModel} onValueChange={setTranscriptionModel}>
+                      <div className="space-y-3">
+                        <Label htmlFor="transcription-model" className="block mb-3">Transcription Model</Label>
+                        <Select value={transcriptionModel} onValueChange={setTranscriptionModel} onOpenChange={handleSelectOpenChange}>
                           <SelectTrigger id="transcription-model">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
-                            {TRANSCRIPTION_MODELS.map((model) => (
-                              <SelectItem key={model.id} value={model.id}>
-                                {model.name}
-                              </SelectItem>
+                          <SelectContent position="popper">
+                            {TRANSCRIPTION_MODELS.map((model, index) => (
+                              <motion.div
+                                key={model.id}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: index * 0.03, duration: 0.15 }}
+                              >
+                                <SelectItem value={model.id}>
+                                  <motion.span
+                                    className="select-none"
+                                    whileHover={{ x: 2 }}
+                                    transition={{ duration: 0.1 }}
+                                  >
+                                    {model.name}
+                                  </motion.span>
+                                </SelectItem>
+                              </motion.div>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
 
                       {/* Language */}
-                      <div className="space-y-2">
-                        <Label htmlFor="language">Language Code</Label>
+                      <div className="space-y-3">
+                        <Label htmlFor="language" className="block mb-3">Language Code</Label>
                         <Input
                           id="language"
                           type="text"

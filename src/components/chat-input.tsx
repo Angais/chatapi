@@ -1,13 +1,18 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { motion } from 'framer-motion'
 import { Send, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useChatStore } from '@/stores/chat-store'
 import { useVoiceChat } from '@/hooks/use-voice-chat'
 
-export function ChatInput() {
+export interface ChatInputRef {
+  focus: () => void
+  addText: (text: string) => void
+}
+
+export const ChatInput = forwardRef<ChatInputRef>((_, ref) => {
   const [message, setMessage] = useState('')
   const [previousMessage, setPreviousMessage] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -29,6 +34,20 @@ export function ChatInput() {
   const { sendTextMessage, isConnected, connect } = useVoiceChat()
 
   const isStreaming = isCurrentChatStreaming()
+
+  // Expose methods via ref
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      textareaRef.current?.focus()
+    },
+    addText: (text: string) => {
+      setMessage(prev => prev + text)
+      // Focus after adding text
+      setTimeout(() => {
+        textareaRef.current?.focus()
+      }, 0)
+    }
+  }), [])
 
   // Update connection ref when isConnected changes
   useEffect(() => {
@@ -134,7 +153,7 @@ export function ChatInput() {
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Type a message..."
-                className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none"
+                className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground placeholder:select-none focus:outline-none"
                 style={{ 
                   minHeight: '24px', 
                   maxHeight: '200px'
@@ -188,4 +207,4 @@ export function ChatInput() {
       </div>
     </motion.div>
   )
-} 
+})

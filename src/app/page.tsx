@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '@/components/header'
 import { ChatMessage } from '@/components/chat-message'
-import { ChatInput } from '@/components/chat-input'
+import { ChatInput, ChatInputRef } from '@/components/chat-input'
 import { TypingIndicator } from '@/components/typing-indicator'
 import { EmptyState } from '@/components/empty-state'
 import { ChatHistory } from '@/components/chat-history'
@@ -28,6 +28,7 @@ export default function ChatPage() {
   } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<ChatInputRef>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [dynamicPadding, setDynamicPadding] = useState(0)
   const prevMessagesLengthRef = useRef(messages.length)
@@ -108,6 +109,35 @@ export default function ChatPage() {
     init()
     fetchModels()
   }, [fetchModels, init])
+
+  // Global keyboard handler to focus input on any key press
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Don't do anything if:
+      // - A modal is open (check for common modal attributes)
+      // - An input/textarea is already focused
+      // - Meta/Ctrl/Alt keys are pressed (for shortcuts)
+      // - Special keys
+      if (
+        document.querySelector('[role="dialog"]') || // Modal is open
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        e.metaKey || e.ctrlKey || e.altKey ||
+        e.key.length > 1 // Special keys like Enter, Escape, etc.
+      ) {
+        return
+      }
+
+      // For printable characters, focus input and add the character
+      if (e.key.length === 1 && chatInputRef.current) {
+        e.preventDefault()
+        chatInputRef.current.addText(e.key)
+      }
+    }
+
+    document.addEventListener('keydown', handleGlobalKeyDown)
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [])
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen)
@@ -194,7 +224,7 @@ export default function ChatPage() {
               <VoiceChatControls />
             )}
           </AnimatePresence>
-          <ChatInput />
+          <ChatInput ref={chatInputRef} />
         </main>
       </div>
     </div>

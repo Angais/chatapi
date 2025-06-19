@@ -28,6 +28,7 @@ export function VoiceModeSelector() {
 
   const isRealtime = isRealtimeModel(selectedModel)
   const [previousMode, setPreviousMode] = useState(voiceMode)
+  const [isOpen, setIsOpen] = useState(false)
 
   // Reset voice mode when switching away from realtime model
   useEffect(() => {
@@ -50,6 +51,34 @@ export function VoiceModeSelector() {
     }
   }, [isRealtime, voiceMode, setVoiceMode])
 
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open)
+    
+    // Quitar focus cuando se cierra el selector
+    if (!open) {
+      requestAnimationFrame(() => {
+        // Buscar el trigger específico del selector que se acaba de cerrar
+        const activeElement = document.activeElement as HTMLElement
+        if (activeElement) {
+          // Si es un elemento relacionado con select, hacer blur
+          if (activeElement.hasAttribute('data-radix-select-trigger') || 
+              activeElement.getAttribute('role') === 'combobox' ||
+              activeElement.hasAttribute('aria-haspopup')) {
+            activeElement.blur()
+          }
+        }
+        
+        // También buscar elementos que puedan haber quedado focused
+        const focusedSelects = document.querySelectorAll('[data-radix-select-trigger]:focus, [role="combobox"]:focus')
+        focusedSelects.forEach(el => {
+          if (el instanceof HTMLElement) {
+            el.blur()
+          }
+        })
+      })
+    }
+  }
+
   if (!isRealtime) {
     return null
   }
@@ -57,15 +86,12 @@ export function VoiceModeSelector() {
   const currentOption = voiceModeOptions.find(opt => opt.value === voiceMode) || voiceModeOptions[0]
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95, x: -10 }}
-      animate={{ opacity: 1, scale: 1, x: 0 }}
-      exit={{ opacity: 0, scale: 0.95, x: -10 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
-    >
+    <div>
       <Select
         value={voiceMode === 'none' ? 'text-to-voice' : voiceMode}
         onValueChange={(value) => setVoiceMode(value as VoiceMode)}
+        open={isOpen}
+        onOpenChange={handleOpenChange}
       >
         <SelectPrimitive.Trigger
           className={cn(
@@ -73,20 +99,18 @@ export function VoiceModeSelector() {
             'ring-offset-background placeholder:text-muted-foreground',
             'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
             'disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
-            'transition-all duration-200'
+            'transition-all duration-200 select-none'
           )}
         >
           <SelectValue />
           <SelectPrimitive.Icon asChild>
-            <motion.svg
+            <svg
               width="12"
               height="12"
               viewBox="0 0 12 12"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
               className="opacity-50"
-              animate={{ rotate: 0 }}
-              transition={{ duration: 0.2 }}
             >
               <path
                 d="M3 4.5L6 7.5L9 4.5"
@@ -95,10 +119,32 @@ export function VoiceModeSelector() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
-            </motion.svg>
+            </svg>
           </SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
-        <SelectContent position="popper" className="w-48">
+        <SelectPrimitive.Portal>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{
+              type: "spring",
+              damping: 25,
+              stiffness: 400,
+              duration: 0.1
+            }}
+          >
+            <SelectPrimitive.Content
+              className="relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md w-48"
+              position="popper"
+              sideOffset={4}
+            >
+              <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
+                <svg width="12" height="12" viewBox="0 0 12 12" className="rotate-180 opacity-50">
+                  <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </SelectPrimitive.ScrollUpButton>
+              <SelectPrimitive.Viewport className="p-1">
           <AnimatePresence mode="wait">
             {voiceModeOptions.map((option, index) => {
               const OptionIcon = option.icon
@@ -113,7 +159,7 @@ export function VoiceModeSelector() {
                     value={option.value}
                     className="cursor-pointer"
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 select-none">
                       <OptionIcon className="h-3.5 w-3.5" />
                       <span>{option.label}</span>
                     </div>
@@ -122,8 +168,16 @@ export function VoiceModeSelector() {
               )
             })}
           </AnimatePresence>
-        </SelectContent>
+              </SelectPrimitive.Viewport>
+              <SelectPrimitive.ScrollDownButton className="flex cursor-default items-center justify-center py-1">
+                <svg width="12" height="12" viewBox="0 0 12 12" className="opacity-50">
+                  <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </SelectPrimitive.ScrollDownButton>
+            </SelectPrimitive.Content>
+          </motion.div>
+        </SelectPrimitive.Portal>
       </Select>
-    </motion.div>
+    </div>
   )
 }

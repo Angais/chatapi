@@ -21,19 +21,14 @@ const CustomSelectTrigger = ({ className, children, ...props }: {
 } & React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>) => (
   <SelectPrimitive.Trigger
     className={cn(
-      'flex h-8 w-auto items-center justify-between rounded-md border px-3 py-2 text-xs gap-2 ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1 transition-all duration-200',
+      'flex h-8 w-auto items-center justify-between rounded-md border px-3 py-2 text-xs gap-2 ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1 transition-all duration-200 select-none',
       className
     )}
     {...props}
   >
     {children}
     <SelectPrimitive.Icon asChild>
-      <motion.div
-        animate={{ rotate: props['aria-expanded'] ? 180 : 0 }}
-        transition={{ duration: 0.2, ease: "easeInOut" }}
-      >
-        <ChevronDown className="h-3 w-3 opacity-50" />
-      </motion.div>
+      <ChevronDown className="h-3 w-3 opacity-50" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 )
@@ -66,7 +61,7 @@ const AnimatedEffortName = ({ effortName }: { effortName: string }) => {
         ease: "easeInOut",
         opacity: { duration: isChanging ? 0.1 : 0.15 }
       }}
-      className="truncate"
+      className="truncate select-none"
     >
       {displayName}
     </motion.span>
@@ -121,6 +116,28 @@ export function ReasoningEffortSelector() {
     } else {
       // Reset animation state when closing
       setShouldAnimateOptions(true)
+      
+      // Quitar focus cuando se cierra el selector
+      requestAnimationFrame(() => {
+        // Buscar el trigger específico del selector que se acaba de cerrar
+        const activeElement = document.activeElement as HTMLElement
+        if (activeElement) {
+          // Si es un elemento relacionado con select, hacer blur
+          if (activeElement.hasAttribute('data-radix-select-trigger') || 
+              activeElement.getAttribute('role') === 'combobox' ||
+              activeElement.hasAttribute('aria-haspopup')) {
+            activeElement.blur()
+          }
+        }
+        
+        // También buscar elementos que puedan haber quedado focused
+        const focusedSelects = document.querySelectorAll('[data-radix-select-trigger]:focus, [role="combobox"]:focus')
+        focusedSelects.forEach(el => {
+          if (el instanceof HTMLElement) {
+            el.blur()
+          }
+        })
+      })
     }
   }
 
@@ -129,64 +146,82 @@ export function ReasoningEffortSelector() {
   }
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0, x: -5 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -5 }}
-        transition={{ delay: 0.15, duration: 0.2 }}
-        whileHover={{ scale: 1.01 }}
-        whileTap={{ scale: 0.99 }}
+    <div>
+      <Select
+        value={reasoningEffort}
+        onValueChange={handleEffortChange}
+        open={isOpen}
+        onOpenChange={handleOpenChange}
       >
-        <Select
-          value={reasoningEffort}
-          onValueChange={handleEffortChange}
-          open={isOpen}
-          onOpenChange={handleOpenChange}
-        >
-          <CustomSelectTrigger>
-            <SelectValue>
-              <AnimatedEffortName 
-                effortName={options.find(opt => opt.value === reasoningEffort)?.label || 'Medium'}
-              />
-            </SelectValue>
-          </CustomSelectTrigger>
-          <SelectContent position="popper" className="w-44">
-            {/* Disclaimer para modelos "otros" */}
-            {isOtherModel && (
-              <>
-                <motion.div 
-                  className="px-3 py-2 text-xs text-muted-foreground/70 italic border-b border-border/50 mb-1 select-none"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.1 }}
-                >
-                  This model may not support reasoning. If unsupported, reasoning will be automatically disabled.
-                </motion.div>
-                <SelectSeparator />
-              </>
-            )}
-            
-            {options.map((option, index) => (
-              <motion.div
-                key={option.value}
-                initial={shouldAnimateOptions ? { opacity: 0, x: -10 } : false}
-                animate={shouldAnimateOptions ? { opacity: 1, x: 0 } : false}
-                transition={shouldAnimateOptions ? { delay: index * 0.03, duration: 0.15 } : {}}
+        <CustomSelectTrigger>
+          <SelectValue>
+            <AnimatedEffortName 
+              effortName={options.find(opt => opt.value === reasoningEffort)?.label || 'Medium'}
+            />
+          </SelectValue>
+        </CustomSelectTrigger>
+        <SelectPrimitive.Portal>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{
+              type: "spring",
+              damping: 25,
+              stiffness: 400,
+              duration: 0.1
+            }}
+          >
+            <SelectPrimitive.Content
+              className="relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md w-44"
+              position="popper"
+              sideOffset={4}
+            >
+              <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
+                <ChevronDown className="h-4 w-4 rotate-180" />
+              </SelectPrimitive.ScrollUpButton>
+              <SelectPrimitive.Viewport className="p-1">
+          {/* Disclaimer para modelos "otros" */}
+          {isOtherModel && (
+            <>
+              <motion.div 
+                className="px-3 py-2 text-xs text-muted-foreground/70 italic border-b border-border/50 mb-1 select-none"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.1 }}
               >
-                <SelectItem value={option.value}>
-                  <motion.span
-                    whileHover={{ x: 2 }}
-                    transition={{ duration: 0.1 }}
-                  >
-                    {option.label}
-                  </motion.span>
-                </SelectItem>
+                This model may not support reasoning. If unsupported, reasoning will be automatically disabled.
               </motion.div>
-            ))}
-          </SelectContent>
-        </Select>
-      </motion.div>
-    </AnimatePresence>
+              <SelectSeparator />
+            </>
+          )}
+          
+          {options.map((option, index) => (
+            <motion.div
+              key={option.value}
+              initial={shouldAnimateOptions ? { opacity: 0, x: -10 } : false}
+              animate={shouldAnimateOptions ? { opacity: 1, x: 0 } : false}
+              transition={shouldAnimateOptions ? { delay: index * 0.03, duration: 0.15 } : {}}
+            >
+              <SelectItem value={option.value}>
+                <motion.span
+                  className="select-none"
+                  whileHover={{ x: 2 }}
+                  transition={{ duration: 0.1 }}
+                >
+                  {option.label}
+                </motion.span>
+              </SelectItem>
+            </motion.div>
+          ))}
+              </SelectPrimitive.Viewport>
+              <SelectPrimitive.ScrollDownButton className="flex cursor-default items-center justify-center py-1">
+                <ChevronDown className="h-4 w-4" />
+              </SelectPrimitive.ScrollDownButton>
+            </SelectPrimitive.Content>
+          </motion.div>
+        </SelectPrimitive.Portal>
+      </Select>
+    </div>
   )
 } 

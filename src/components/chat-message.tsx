@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Copy, Info } from 'lucide-react'
+import { Copy, Info, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Highlight, themes } from 'prism-react-renderer'
 import { useTheme } from '@/hooks/use-theme'
@@ -74,19 +74,15 @@ function CodeBlock({ children, className }: { children: string; className?: stri
             <code>{children.trim()}</code>
           </pre>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={`absolute top-2 right-2 h-8 w-8 p-0 transition-opacity duration-200 ${
-            showCopyButton ? 'opacity-100' : 'opacity-0 group-hover/codeblock:opacity-100'
-          }`}
-          onClick={(e) => {
-            e.stopPropagation()
-            navigator.clipboard.writeText(children)
-          }}
-        >
-          <Copy className="h-3 w-3" />
-        </Button>
+        <div className={`absolute top-2 right-2 transition-opacity duration-200 ${
+          showCopyButton ? 'opacity-100' : 'opacity-0 group-hover/codeblock:opacity-100'
+        }`}>
+          <CopyButton
+            content={children}
+            className="h-8 w-8 p-0"
+            disabled={false}
+          />
+        </div>
       </div>
     )
   }
@@ -115,20 +111,72 @@ function CodeBlock({ children, className }: { children: string; className?: stri
           )}
         </Highlight>
       </div>
+      <div className={`absolute top-2 right-2 transition-opacity duration-200 ${
+        showCopyButton ? 'opacity-100' : 'opacity-0 group-hover/codeblock:opacity-100'
+      }`}>
+        <CopyButton
+          content={children}
+          className="h-8 w-8 p-0"
+          disabled={false}
+        />
+      </div>
+    </div>
+  )
+}
+
+// Componente CopyButton con animación real
+function CopyButton({ 
+  content, 
+  className = "",
+  disabled = false
+}: { 
+  content: string
+  className?: string
+  disabled?: boolean
+}) {
+  const [copied, setCopied] = useState(false)
+  
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error)
+    }
+  }
+  
+  return (
+    <motion.div
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      transition={{ type: "spring", stiffness: 400, damping: 25 }}
+    >
       <Button
         variant="ghost"
         size="sm"
-        className={`absolute top-2 right-2 h-8 w-8 p-0 transition-opacity duration-200 ${
-          showCopyButton ? 'opacity-100' : 'opacity-0 group-hover/codeblock:opacity-100'
-        }`}
-        onClick={(e) => {
-          e.stopPropagation()
-          navigator.clipboard.writeText(children)
-        }}
+        className={className}
+        onClick={handleCopy}
+        disabled={disabled}
       >
-        <Copy className="h-3 w-3" />
+        <motion.div
+          initial={false}
+          animate={{ 
+            scale: copied ? [1, 1.2, 1] : 1,
+            rotate: copied ? [0, 10, -10, 0] : 0
+          }}
+          transition={{ duration: 0.3 }}
+        >
+          {copied ? (
+            <Check className="w-3 h-3 text-green-500" />
+          ) : (
+            <Copy className="w-3 h-3" />
+          )}
+        </motion.div>
       </Button>
-    </div>
+    </motion.div>
   )
 }
 
@@ -239,15 +287,11 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                 <div className={`flex items-center gap-1 mt-2 h-7 transition-all duration-200 ${
                   isStreaming || !content.trim() ? 'opacity-0 pointer-events-none' : 'opacity-100'
                 }`}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => navigator.clipboard.writeText(content)}
+                  <CopyButton
+                    content={content}
+                    className={`h-7 px-2 text-xs`}
                     disabled={isStreaming || !content.trim()}
-                  >
-                    <Copy className="w-3 h-3" />
-                  </Button>
+                  />
                   {devMode && message && (
                     <Button
                       variant="ghost"
@@ -268,17 +312,11 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                 <div className={`flex items-center gap-1 mt-2 transition-opacity duration-300 ease-out ${
                   showCopyButton ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                 }`}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      navigator.clipboard.writeText(content)
-                    }}
-                  >
-                    <Copy className="w-3 h-3" />
-                  </Button>
+                  <CopyButton
+                    content={content}
+                    className={`h-7 px-2 text-xs`}
+                    disabled={false}
+                  />
                   {devMode && message && (
                     <Button
                       variant="ghost"

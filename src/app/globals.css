@@ -240,43 +240,43 @@ body {
 
 /* Animation classes */
 .animate-in {
-  animation: animate-in 0.15s ease-out;
+  /* animation: animate-in 0.15s ease-out; */
 }
 
 .animate-out {
-  animation: animate-out 0.15s ease-in;
+  /* animation: animate-out 0.15s ease-in; */
 }
 
 .fade-in-0 {
-  animation: fade-in 0.15s ease-out;
+  /* animation: fade-in 0.15s ease-out; */
 }
 
 .fade-out-0 {
-  animation: fade-out 0.15s ease-in;
+  /* animation: fade-out 0.15s ease-in; */
 }
 
 .zoom-in-95 {
-  animation: zoom-in 0.15s ease-out;
+  /* animation: zoom-in 0.15s ease-out; */
 }
 
 .zoom-out-95 {
-  animation: zoom-out 0.15s ease-in;
+  /* animation: zoom-out 0.15s ease-in; */
 }
 
 .slide-in-from-top-2 {
-  animation: slide-in-from-top-2 0.15s ease-out;
+  /* animation: slide-in-from-top-2 0.15s ease-out; */
 }
 
 .slide-in-from-bottom-2 {
-  animation: slide-in-from-bottom-2 0.15s ease-out;
+  /* animation: slide-in-from-bottom-2 0.15s ease-out; */
 }
 
 .slide-in-from-left-2 {
-  animation: slide-in-from-left-2 0.15s ease-out;
+  /* animation: slide-in-from-left-2 0.15s ease-out; */
 }
 
 .slide-in-from-right-2 {
-  animation: slide-in-from-right-2 0.15s ease-out;
+  /* animation: slide-in-from-right-2 0.15s ease-out; */
 }
 
 @keyframes slide-in-from-top-2 {
@@ -321,4 +321,36 @@ body {
     transform: translateX(0);
     opacity: 1;
   }
+}
+
+/* Animaciones sutiles para selectores */
+@keyframes subtle-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes subtle-fade-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+/* Clases para animaciones sutiles */
+.subtle-animate-in {
+  animation: subtle-fade-in 0.12s ease-out;
+}
+
+.subtle-animate-out {
+  animation: subtle-fade-out 0.08s ease-in;
 }
