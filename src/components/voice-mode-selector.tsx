@@ -44,13 +44,6 @@ export function VoiceModeSelector() {
     }
   }, [voiceMode, previousMode])
 
-  // If switching to realtime model and voice mode is 'none', default to 'text-to-voice'
-  useEffect(() => {
-    if (isRealtime && voiceMode === 'none') {
-      setVoiceMode('text-to-voice')
-    }
-  }, [isRealtime, voiceMode, setVoiceMode])
-
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open)
     

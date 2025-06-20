@@ -207,12 +207,20 @@ export function ModelSelector() {
   }
 
   const handleModelChange = (value: string) => {
+    const previousModel = selectedModel
+    const wasRealtimeModel = REALTIME_MODELS.some(m => m.id === previousModel)
+    const isNewRealtimeModel = REALTIME_MODELS.some(m => m.id === value)
+    
     // Animate the change
     setSelectedModel(value)
     
-    // If switching to a realtime model, enable text-to-voice by default
-    if (REALTIME_MODELS.some(m => m.id === value)) {
-      setVoiceMode('text-to-voice')
+    // If switching to a realtime model, set default voice mode to text-to-voice
+    if (isNewRealtimeModel) {
+      // Only change voice mode if we're switching from a non-realtime model
+      if (!wasRealtimeModel) {
+        setVoiceMode('text-to-voice')
+      }
+      // If switching between realtime models, keep the current voice mode
     } else {
       // Reset to none when switching away from realtime
       setVoiceMode('none')

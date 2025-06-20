@@ -545,7 +545,7 @@ export const useChatStore = create<ChatState>()(
               unsupportedModelError: null,
               selectedModel: preferredModel,
               reasoningEffort: defaultReasoningEffort,
-              voiceMode: 'none', // Reset voice mode to trigger voice cleanup
+              voiceMode: 'none', // Always reset to none
               isVoiceSessionEnded: false,
             })
           },

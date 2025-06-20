@@ -72,7 +72,10 @@ export function useVoiceChat() {
     }
 
     const currentVoiceMode = useChatStore.getState().voiceMode
-    console.log('🎯 Connecting to Realtime API...', { voiceMode: currentVoiceMode, selectedModel })
+    const messages = useChatStore.getState().messages
+    const systemInstructions = useChatStore.getState().systemInstructions
+    
+    console.log('🎯 Connecting to Realtime API...', { voiceMode: currentVoiceMode, selectedModel, messageCount: messages.length })
 
     if (currentVoiceMode === 'voice-to-voice') {
       const hasAccess = await checkPermission()
@@ -82,10 +85,30 @@ export function useVoiceChat() {
     }
 
     try {
+      // Prepare initial messages from chat history
+      const initialMessages = []
+      
+      // Add system message if there are existing messages
+      if (messages.length > 0 && systemInstructions.trim()) {
+        initialMessages.push({
+          role: 'system',
+          content: systemInstructions.trim()
+        })
+      }
+      
+      // Add existing conversation messages
+      messages.forEach(msg => {
+        initialMessages.push({
+          role: msg.isUser ? 'user' : 'assistant',
+          content: msg.content
+        })
+      })
+      
       realtimeService.current = new RealtimeAPIService({
         apiKey,
         model: selectedModel,
         voice: 'alloy',
+        initialMessages: initialMessages.length > 0 ? initialMessages : undefined,
         onConnectionChange: (connected) => {
           console.log('🔄 Connection status changed:', connected)
           setIsConnected(connected)
@@ -116,7 +139,7 @@ export function useVoiceChat() {
       console.error('❌ Failed to connect to Realtime API:', error)
       throw error
     }
-  }, [selectedModel, checkPermission])
+  }, [selectedModel, checkPermission, addMessage])
 
   // Send text message for text-to-voice mode
   const sendTextMessage = useCallback((text: string) => {

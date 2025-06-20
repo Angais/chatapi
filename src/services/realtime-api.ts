@@ -10,6 +10,7 @@ interface RealtimeConfig {
   onConnectionChange?: (connected: boolean) => void
   onAudioData?: (audioData: string) => void
   onTranscript?: (transcript: string, isFinal: boolean) => void
+  initialMessages?: Array<{ role: string; content: string }>
 }
 
 export class RealtimeAPIService {
@@ -176,8 +177,18 @@ export class RealtimeAPIService {
         }
       }
       
-      // Use system instructions if provided, otherwise use default
-      const instructions = state.systemInstructions.trim() || 'You are a helpful assistant.'
+      // Build instructions with conversation history context
+      let instructions = state.systemInstructions.trim() || 'You are a helpful assistant.'
+      
+      // If we have conversation history, append it to the instructions
+      if (this.config.initialMessages && this.config.initialMessages.length > 0) {
+        const conversationContext = this.config.initialMessages
+          .filter(msg => msg.role !== 'system') // Exclude system messages
+          .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+          .join('\n\n')
+        
+        instructions = `${instructions}\n\nHere is the conversation history so far:\n\n${conversationContext}\n\nPlease continue the conversation naturally, taking into account this previous context.`
+      }
       
       const sessionUpdateMessage = {
         type: 'session.update',
@@ -197,8 +208,62 @@ export class RealtimeAPIService {
         }
       }
       
-      console.log('📤 Sending session.update message:', JSON.stringify(sessionUpdateMessage, null, 2))
+      console.log('📤 Sending session.update message with conversation context in instructions')
       this.sendEvent(sessionUpdateMessage)
+      
+      // Send initial conversation history if provided
+      if (this.config.initialMessages && this.config.initialMessages.length > 0) {
+        console.log('📤 Sending conversation history:', this.config.initialMessages.length, 'messages')
+        
+        // Wait a bit after session setup before sending conversation items
+        setTimeout(() => {
+          this.config.initialMessages?.forEach((message, index) => {
+            // Skip system messages - they're handled in session configuration
+            if (message.role === 'system') return
+            
+            let conversationItem: any
+            
+            if (message.role === 'user') {
+              // User messages use 'input_text' content type
+              conversationItem = {
+                type: 'conversation.item.create',
+                item: {
+                  type: 'message',
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'input_text',
+                      text: message.content
+                    }
+                  ]
+                }
+              }
+            } else if (message.role === 'assistant') {
+              // Assistant messages use 'text' content type
+              conversationItem = {
+                type: 'conversation.item.create',
+                item: {
+                  type: 'message',
+                  role: 'assistant',
+                  content: [
+                    {
+                      type: 'text',
+                      text: message.content
+                    }
+                  ]
+                }
+              }
+            }
+            
+            // Add a delay between messages to ensure proper ordering
+            setTimeout(() => {
+              console.log(`📤 Sending ${message.role} message with content type: ${message.role === 'user' ? 'input_text' : 'text'}`)
+              this.sendEvent(conversationItem)
+            }, 100 + (index * 100)) // Start after 100ms, then 100ms between each
+          })
+        }, 500) // Wait 500ms after session setup
+      }
+      
       resolve()
     }
 

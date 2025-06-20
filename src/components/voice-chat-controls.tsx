@@ -84,14 +84,6 @@ export function VoiceChatControls() {
     }
   }, [connect, setVoiceSessionEnded])
 
-  // Auto-initiate connection when loading a chat or switching to text-to-voice mode,
-  // but only if the user hasn't manually ended the session before.
-  useEffect(() => {
-    if (voiceMode === 'text-to-voice' && hasMessages && !isConnected && !isConnecting && !isVoiceSessionEnded) {
-      handleConnect()
-    }
-  }, [voiceMode, hasMessages, isConnected, isConnecting, isVoiceSessionEnded, handleConnect])
-
   if (!isRealtimeModel() || voiceMode === 'none') {
     return null
   }
@@ -168,8 +160,8 @@ export function VoiceChatControls() {
                 </motion.div>
               )}
             </>
-          ) : isVoiceSessionEnded ? (
-            // User has disconnected, so give them an option to start again.
+          ) : (
+            // Always show the start button instead of checking for messages
             <Button
               onClick={handleConnect}
               disabled={isConnecting}
@@ -182,11 +174,6 @@ export function VoiceChatControls() {
               <Phone className="h-4 w-4" />
               Start Voice Session
             </Button>
-          ) : (
-            // Default state for new chats or chats where session hasn't started.
-            <div className="text-xs text-muted-foreground select-none">
-              Voice session will start when you send your first message
-            </div>
           )
         )}
 
