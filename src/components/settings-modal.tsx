@@ -47,6 +47,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [showAdvancedVoice, setShowAdvancedVoice] = useState(false)
+  const [systemInstructionsInput, setSystemInstructionsInput] = useState('')
   
   const { 
     fetchModels, 
@@ -74,6 +75,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     setTranscriptionModel,
     transcriptionLanguage,
     setTranscriptionLanguage,
+    systemInstructions,
+    setSystemInstructions,
   } = useChatStore()
   const { theme, setTheme } = useTheme()
 
@@ -82,6 +85,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     if (open) {
       const storedKey = localStorage.getItem('openai_api_key') || ''
       setApiKey(storedKey)
+      setSystemInstructionsInput(systemInstructions)
       
       // Force blur the API key input to prevent auto-selection
       setTimeout(() => {
@@ -92,7 +96,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         }
       }, 100)
     }
-  }, [open])
+  }, [open, systemInstructions])
 
   const handleSave = async () => {
     setIsSaving(true)
@@ -105,6 +109,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       } else {
         localStorage.removeItem('openai_api_key')
       }
+      
+      // Save system instructions
+      setSystemInstructions(systemInstructionsInput)
       
       // Refetch models if API key changed
       await fetchModels()
@@ -239,6 +246,22 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           <div className="space-y-4">
             <h3 className="text-sm font-semibold">Chat Settings</h3>
             
+            {/* System Instructions */}
+            <div className="space-y-3">
+              <Label htmlFor="system-instructions" className="block mb-3">System Instructions</Label>
+              <textarea
+                id="system-instructions"
+                value={systemInstructionsInput}
+                onChange={(e) => setSystemInstructionsInput(e.target.value)}
+                placeholder="You are a helpful assistant..."
+                className="w-full min-h-[100px] p-3 text-sm rounded-md border border-input bg-background resize-y"
+                rows={4}
+              />
+              <p className="text-xs text-muted-foreground">
+                Sets the behavior and personality of the AI assistant. This message is sent with every request.
+              </p>
+            </div>
+
             {/* Temperature */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">

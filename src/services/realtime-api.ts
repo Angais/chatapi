@@ -176,16 +176,19 @@ export class RealtimeAPIService {
         }
       }
       
+      // Use system instructions if provided, otherwise use default
+      const instructions = state.systemInstructions.trim() || 'You are a helpful assistant.'
+      
       const sessionUpdateMessage = {
         type: 'session.update',
         session: {
           modalities: ['text', 'audio'],
           voice: state.voice || 'alloy',
-          instructions: 'You are a helpful assistant.',
+          instructions: instructions,
           input_audio_format: 'pcm16',
           output_audio_format: 'pcm16',
           turn_detection: turnDetection,
-          temperature: adjustedTemperature, // Use adjusted temperature
+          temperature: adjustedTemperature,
           // Add transcription settings
           input_audio_transcription: {
             model: state.transcriptionModel,

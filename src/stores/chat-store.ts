@@ -185,6 +185,7 @@ interface ChatState {
   temperature: number
   maxTokens: number
   voice: string
+  systemInstructions: string
   // VAD settings
   vadType: 'server_vad' | 'semantic_vad'
   vadThreshold: number
@@ -249,6 +250,7 @@ interface ChatState {
   setTemperature: (temperature: number) => void
   setMaxTokens: (maxTokens: number) => void
   setVoice: (voice: string) => void
+  setSystemInstructions: (instructions: string) => void
   // VAD settings actions
   setVadType: (type: 'server_vad' | 'semantic_vad') => void
   setVadThreshold: (threshold: number) => void
@@ -318,6 +320,7 @@ export const useChatStore = create<ChatState>()(
           temperature: 0.7,
           maxTokens: 1000,
           voice: 'alloy',
+          systemInstructions: '',
           vadType: 'server_vad',
           vadThreshold: 0.5,
           vadPrefixPadding: 300,
@@ -337,6 +340,7 @@ export const useChatStore = create<ChatState>()(
               const savedTemperature = localStorage.getItem('openai_temperature')
               const savedMaxTokens = localStorage.getItem('openai_max_tokens')
               const savedVoice = localStorage.getItem('openai_voice')
+              const savedSystemInstructions = localStorage.getItem('openai_system_instructions')
               const savedVadType = localStorage.getItem('openai_vad_type')
               const savedVadThreshold = localStorage.getItem('openai_vad_threshold')
               const savedVadPrefixPadding = localStorage.getItem('openai_vad_prefix_padding')
@@ -348,6 +352,7 @@ export const useChatStore = create<ChatState>()(
               if (savedTemperature) set({ temperature: parseFloat(savedTemperature) })
               if (savedMaxTokens) set({ maxTokens: parseInt(savedMaxTokens) })
               if (savedVoice) set({ voice: savedVoice })
+              if (savedSystemInstructions) set({ systemInstructions: savedSystemInstructions })
               if (savedVadType) set({ vadType: savedVadType as 'server_vad' | 'semantic_vad' })
               if (savedVadThreshold) set({ vadThreshold: parseFloat(savedVadThreshold) })
               if (savedVadPrefixPadding) set({ vadPrefixPadding: parseInt(savedVadPrefixPadding) })
@@ -644,6 +649,7 @@ export const useChatStore = create<ChatState>()(
             const reasoningEffort = get().reasoningEffort
             const devMode = get().devMode
             const currentChatId = get().currentChatId
+            const systemInstructions = get().systemInstructions
             
             if (!apiKey) {
               set({ error: 'Please set your OpenAI API key in settings' })
@@ -662,13 +668,23 @@ export const useChatStore = create<ChatState>()(
 
             // Prepare messages for API
             const currentMessages = get().messages
-            const messagesToSend = [
+            const messagesToSend = []
+            
+            // Add system instructions - use default if none provided
+            const instructions = systemInstructions.trim() || 'You are a helpful assistant.'
+            messagesToSend.push({
+              role: 'system',
+              content: instructions
+            })
+            
+            // Add existing messages
+            messagesToSend.push(
               ...currentMessages.map(msg => ({
                 role: msg.isUser ? 'user' : 'assistant',
                 content: msg.content,
               })),
-              { role: 'user', content },
-            ]
+              { role: 'user', content }
+            )
 
             // Debug info for user message
             const userDebugInfo = devMode ? {
@@ -1187,6 +1203,11 @@ export const useChatStore = create<ChatState>()(
             localStorage.setItem('openai_voice', voice)
           },
 
+          setSystemInstructions: (systemInstructions: string) => {
+            set({ systemInstructions })
+            localStorage.setItem('openai_system_instructions', systemInstructions)
+          },
+
           setVadType: (vadType: 'server_vad' | 'semantic_vad') => {
             set({ vadType })
             localStorage.setItem('openai_vad_type', vadType)
@@ -1235,6 +1256,7 @@ export const useChatStore = create<ChatState>()(
           temperature: state.temperature,
           maxTokens: state.maxTokens,
           voice: state.voice,
+          systemInstructions: state.systemInstructions,
           vadType: state.vadType,
           vadThreshold: state.vadThreshold,
           vadPrefixPadding: state.vadPrefixPadding,
