@@ -95,6 +95,35 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
     setImages(prev => prev.filter((_, i) => i !== index))
   }
 
+  // Handle paste events for images
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    // Check if the model supports vision
+    if (!isVisionModel() || isRealtimeModel()) return
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      
+      // Check if the item is an image
+      if (item.type.startsWith('image/')) {
+        e.preventDefault() // Prevent default paste behavior for images
+        
+        const file = item.getAsFile()
+        if (!file) continue
+
+        // Read the file and add it to images
+        const reader = new FileReader()
+        reader.onload = (event) => {
+          const url = event.target?.result as string
+          setImages(prev => [...prev, { url, file }])
+        }
+        reader.readAsDataURL(file)
+      }
+    }
+  }
+
   const handleSubmit = async () => {
     if ((message.trim() || images.length > 0) && !isLoading && !isStreaming) {
       const messageToSend = message.trim()
@@ -225,6 +254,7 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 placeholder={images.length > 0 ? "Add a message about the image(s)..." : "Type a message..."}
                 className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground placeholder:select-none focus:outline-none"
                 style={{ 
@@ -273,7 +303,10 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
             {isStreaming || isLoading ? (
               "Press Enter or click Stop to cancel"
             ) : (
-              "Press Enter to send, Shift + Enter for new line"
+              <>
+                Press Enter to send, Shift + Enter for new line
+                {isVisionModel() && !isRealtimeModel() && " • Paste images with Ctrl/Cmd + V"}
+              </>
             )}
           </motion.p>
         </div>
