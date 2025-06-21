@@ -145,6 +145,12 @@ export function useVoiceChat() {
   const sendTextMessage = useCallback((text: string) => {
     console.log('sendTextMessage called', { text, hasService: !!realtimeService.current })
 
+    // ✨ NEW: stop any in-progress playback so the next response
+    //        can start cleanly.
+    if (audioPlayer.current) {
+      audioPlayer.current.stop()
+    }
+
     // Add user message immediately to start the chat
     addMessage(text, true)
 
