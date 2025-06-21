@@ -1,19 +1,24 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useChatStore, REALTIME_MODELS } from '@/stores/chat-store'
+import { useChatStore, REALTIME_MODELS, VISION_MODELS } from '@/stores/chat-store'
 import {
   Select,
-  SelectContent,
   SelectItem,
   SelectValue,
   SelectSeparator,
 } from '@/components/ui/select'
 import * as SelectPrimitive from '@radix-ui/react-select'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, ChevronDown, ChevronRight, Mic } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronRight, Mic, AlertCircle } from 'lucide-react'
 import { ReasoningEffortSelector } from './reasoning-effort-selector'
 import { cn } from '@/lib/utils'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 // Custom SelectTrigger that only shows chevron when there are other models
 const CustomSelectTrigger = ({ className, children, showChevron, ...props }: { 
@@ -102,6 +107,56 @@ const AnimatedModelName = ({ modelName, isLoading }: { modelName: string, isLoad
   )
 }
 
+// Custom SelectItem with disabled state support
+const DisableableSelectItem = ({ 
+  value, 
+  children, 
+  disabled = false, 
+  tooltipContent = "",
+  className = "",
+  ...props 
+}: {
+  value: string
+  children: React.ReactNode
+  disabled?: boolean
+  tooltipContent?: string
+  className?: string
+}) => {
+  const itemContent = (
+    <SelectItem 
+      value={value} 
+      disabled={disabled}
+      className={cn(
+        disabled && "opacity-50 cursor-not-allowed text-muted-foreground",
+        className
+      )}
+      {...props}
+    >
+      <div className="flex items-center gap-2">
+        {children}
+        {disabled && <AlertCircle className="h-3 w-3" />}
+      </div>
+    </SelectItem>
+  )
+
+  if (disabled && tooltipContent) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {itemContent}
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{tooltipContent}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
+
+  return itemContent
+}
+
 export function ModelSelector() {
   const {
     selectedModel,
@@ -110,7 +165,7 @@ export function ModelSelector() {
     getAvailablePresets,
     getOtherModels,
     setVoiceMode,
-    isRealtimeModel,
+    chatHasImages,
   } = useChatStore()
 
   const [showAllModels, setShowAllModels] = useState(false)
@@ -120,6 +175,38 @@ export function ModelSelector() {
   const selectedItemRef = useRef<HTMLDivElement>(null)
   const availablePresets = getAvailablePresets()
   const otherModels = getOtherModels()
+  
+  // Check if current chat has images
+  const hasImages = chatHasImages()
+  
+  // Check if model can be selected based on chat state
+  const isModelDisabled = (modelId: string) => {
+    // If chat has images, only vision models can be selected (not realtime)
+    if (hasImages) {
+      const isVision = VISION_MODELS.some(vm => modelId.includes(vm))
+      const isRealtime = REALTIME_MODELS.some(rm => rm.id === modelId)
+      // Disable if it's realtime OR if it's not a vision model
+      return isRealtime || !isVision
+    }
+    
+    return false
+  }
+  
+  // Get tooltip message for disabled models
+  const getDisabledTooltip = (modelId: string) => {
+    const isRealtime = REALTIME_MODELS.some(rm => rm.id === modelId)
+    const isVision = VISION_MODELS.some(vm => modelId.includes(vm))
+    
+    if (hasImages) {
+      if (isRealtime) {
+        return "Realtime models don't support images"
+      } else if (!isVision) {
+        return "This model doesn't support images"
+      }
+    }
+    
+    return ""
+  }
 
   // Solo mostrar la flecha si hay otros modelos disponibles
   const shouldShowChevron = otherModels.length > 0 && availablePresets.length > 0
@@ -270,51 +357,69 @@ export function ModelSelector() {
                 </SelectPrimitive.ScrollUpButton>
                 <SelectPrimitive.Viewport className="p-1">
             {/* Presets disponibles */}
-            {availablePresets.map((preset, index) => (
-              <motion.div
-                key={preset.id}
-                ref={preset.id === selectedModel ? selectedItemRef : null}
-                initial={shouldAnimatePresets ? { opacity: 0, x: -10 } : false}
-                animate={shouldAnimatePresets ? { opacity: 1, x: 0 } : false}
-                transition={shouldAnimatePresets ? { delay: index * 0.02, duration: 0.15 } : {}}
-              >
-                <SelectItem value={preset.id}>
-                  <motion.span
-                    className="select-none"
-                    whileHover={{ x: 2 }}
-                    transition={{ duration: 0.1 }}
+            {availablePresets.map((preset, index) => {
+              const disabled = isModelDisabled(preset.id)
+              const tooltipContent = getDisabledTooltip(preset.id)
+              
+              return (
+                <motion.div
+                  key={preset.id}
+                  ref={preset.id === selectedModel ? selectedItemRef : null}
+                  initial={shouldAnimatePresets ? { opacity: 0, x: -10 } : false}
+                  animate={shouldAnimatePresets ? { opacity: 1, x: 0 } : false}
+                  transition={shouldAnimatePresets ? { delay: index * 0.02, duration: 0.15 } : {}}
+                >
+                  <DisableableSelectItem
+                    value={preset.id}
+                    disabled={disabled}
+                    tooltipContent={tooltipContent}
                   >
-                    {preset.displayName}
-                  </motion.span>
-                </SelectItem>
-              </motion.div>
-            ))}
+                    <motion.span
+                      className="select-none"
+                      whileHover={!disabled ? { x: 2 } : {}}
+                      transition={{ duration: 0.1 }}
+                    >
+                      {preset.displayName}
+                    </motion.span>
+                  </DisableableSelectItem>
+                </motion.div>
+              )
+            })}
             
             {/* Realtime models */}
             {REALTIME_MODELS.length > 0 && availablePresets.length > 0 && (
               <SelectSeparator />
             )}
             
-            {REALTIME_MODELS.map((model, index) => (
-              <motion.div
-                key={model.id}
-                ref={model.id === selectedModel ? selectedItemRef : null}
-                initial={shouldAnimatePresets ? { opacity: 0, x: -10 } : false}
-                animate={shouldAnimatePresets ? { opacity: 1, x: 0 } : false}
-                transition={shouldAnimatePresets ? { delay: (availablePresets.length + index) * 0.02, duration: 0.15 } : {}}
-              >
-                <SelectItem value={model.id}>
-                  <motion.div
-                    className="flex items-center gap-2 select-none"
-                    whileHover={{ x: 2 }}
-                    transition={{ duration: 0.1 }}
+            {REALTIME_MODELS.map((model, index) => {
+              const disabled = isModelDisabled(model.id)
+              const tooltipContent = getDisabledTooltip(model.id)
+              
+              return (
+                <motion.div
+                  key={model.id}
+                  ref={model.id === selectedModel ? selectedItemRef : null}
+                  initial={shouldAnimatePresets ? { opacity: 0, x: -10 } : false}
+                  animate={shouldAnimatePresets ? { opacity: 1, x: 0 } : false}
+                  transition={shouldAnimatePresets ? { delay: (availablePresets.length + index) * 0.02, duration: 0.15 } : {}}
+                >
+                  <DisableableSelectItem
+                    value={model.id}
+                    disabled={disabled}
+                    tooltipContent={tooltipContent}
                   >
-                    <Mic className="h-3 w-3" />
-                    <span>{model.displayName}</span>
-                  </motion.div>
-                </SelectItem>
-              </motion.div>
-            ))}
+                    <motion.div
+                      className="flex items-center gap-2 select-none"
+                      whileHover={!disabled ? { x: 2 } : {}}
+                      transition={{ duration: 0.1 }}
+                    >
+                      <Mic className="h-3 w-3" />
+                      <span>{model.displayName}</span>
+                    </motion.div>
+                  </DisableableSelectItem>
+                </motion.div>
+              )
+            })}
             
             {/* Separador y desplegable de otros modelos */}
             {otherModels.length > 0 && (availablePresets.length > 0 || REALTIME_MODELS.length > 0) && (
@@ -348,28 +453,38 @@ export function ModelSelector() {
                         These are all models available from the API. Many may not work with our interface, but we provide the freedom to try them.
                       </motion.div>
                       
-                      {otherModels.map((model, index) => (
-                        <motion.div
-                          key={model.id}
-                          ref={model.id === selectedModel ? selectedItemRef : null}
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ 
-                            delay: 0.15 + (index * 0.01), 
-                            duration: 0.15 
-                          }}
-                        >
-                          <SelectItem value={model.id} className="pl-6">
-                            <motion.span
-                              className="select-none"
-                              whileHover={{ x: 2 }}
-                              transition={{ duration: 0.1 }}
+                      {otherModels.map((model, index) => {
+                        const disabled = isModelDisabled(model.id)
+                        const tooltipContent = getDisabledTooltip(model.id)
+                        
+                        return (
+                          <motion.div
+                            key={model.id}
+                            ref={model.id === selectedModel ? selectedItemRef : null}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ 
+                              delay: 0.15 + (index * 0.01), 
+                              duration: 0.15 
+                            }}
+                          >
+                            <DisableableSelectItem
+                              value={model.id}
+                              disabled={disabled}
+                              tooltipContent={tooltipContent}
+                              className="pl-6"
                             >
-                              {model.name}
-                            </motion.span>
-                          </SelectItem>
-                        </motion.div>
-                      ))}
+                              <motion.span
+                                className="select-none"
+                                whileHover={!disabled ? { x: 2 } : {}}
+                                transition={{ duration: 0.1 }}
+                              >
+                                {model.name}
+                              </motion.span>
+                            </DisableableSelectItem>
+                          </motion.div>
+                        )
+                      })}
                     </motion.div>
                   )}
                 </AnimatePresence>

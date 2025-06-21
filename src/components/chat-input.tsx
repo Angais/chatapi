@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { motion } from 'framer-motion'
-import { Send, Square } from 'lucide-react'
+import { Send, Square, ImagePlus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useChatStore } from '@/stores/chat-store'
 import { useVoiceChat } from '@/hooks/use-voice-chat'
@@ -12,10 +12,13 @@ export interface ChatInputRef {
   addText: (text: string) => void
 }
 
-export const ChatInput = forwardRef<ChatInputRef>((_, ref) => {
+export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref) => {
+  ChatInput.displayName = 'ChatInput'
   const [message, setMessage] = useState('')
   const [previousMessage, setPreviousMessage] = useState('')
+  const [images, setImages] = useState<Array<{ url: string; file: File }>>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const connectionRef = useRef<boolean>(false) // Track connection state
   
   const { 
@@ -24,9 +27,9 @@ export const ChatInput = forwardRef<ChatInputRef>((_, ref) => {
     isCurrentChatStreaming,
     stopStreaming, 
     error,
-    currentChatId,
     voiceMode,
     isRealtimeModel,
+    isVisionModel,
     isVoiceSessionEnded,
     setVoiceSessionEnded,
   } = useChatStore()
@@ -69,17 +72,42 @@ export const ChatInput = forwardRef<ChatInputRef>((_, ref) => {
     }
   }, [error, previousMessage, message])
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files) return
+
+    Array.from(files).forEach(file => {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const url = e.target?.result as string
+          setImages(prev => [...prev, { url, file }])
+        }
+        reader.readAsDataURL(file)
+      }
+    })
+
+    // Clear the input value to allow selecting the same file again
+    e.target.value = ''
+  }
+
+  const removeImage = (index: number) => {
+    setImages(prev => prev.filter((_, i) => i !== index))
+  }
+
   const handleSubmit = async () => {
-    if (message.trim() && !isLoading && !isStreaming) {
+    if ((message.trim() || images.length > 0) && !isLoading && !isStreaming) {
       const messageToSend = message.trim()
+      const imagesToSend = [...images]
       setPreviousMessage(messageToSend)
       setMessage('')
+      setImages([])
       
       // Use voice chat for text-to-voice with realtime models
       if (isRealtimeModel() && voiceMode === 'text-to-voice') {
         // If the user manually ended the session, send as a regular message
         if (isVoiceSessionEnded) {
-          await sendMessage(messageToSend)
+          await sendMessage(messageToSend, imagesToSend)
           setPreviousMessage('')
           return
         }
@@ -111,7 +139,7 @@ export const ChatInput = forwardRef<ChatInputRef>((_, ref) => {
         }
       } else {
         // Regular chat for non-realtime models
-        await sendMessage(messageToSend)
+        await sendMessage(messageToSend, imagesToSend)
         setPreviousMessage('')
       }
     }
@@ -144,7 +172,52 @@ export const ChatInput = forwardRef<ChatInputRef>((_, ref) => {
       {/* Main input */}
       <div className="container max-w-4xl mx-auto px-4 pt-4">
         <div className="relative">
+          {/* Image previews */}
+          {images.length > 0 && (
+            <div className="flex gap-2 mb-2 flex-wrap">
+              {images.map((img, index) => (
+                <div key={index} className="relative group">
+                  <img
+                    src={img.url}
+                    alt={`Upload ${index + 1}`}
+                    className="h-16 w-16 object-cover rounded-lg border"
+                  />
+                  <button
+                    onClick={() => removeImage(index)}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="flex items-end gap-3 p-3 rounded-2xl border border-input bg-background focus-within:border-ring transition-colors">
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleImageSelect}
+              className="hidden"
+            />
+
+            {/* Image upload button - only show for vision models */}
+            {isVisionModel() && !isRealtimeModel() && (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="flex-shrink-0 h-8 w-8"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading || isStreaming}
+              >
+                <ImagePlus className="h-4 w-4" />
+              </Button>
+            )}
+
             {/* Text area */}
             <div className="flex-1 min-h-[24px] max-h-[200px]">
               <textarea
@@ -152,7 +225,7 @@ export const ChatInput = forwardRef<ChatInputRef>((_, ref) => {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type a message..."
+                placeholder={images.length > 0 ? "Add a message about the image(s)..." : "Type a message..."}
                 className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground placeholder:select-none focus:outline-none"
                 style={{ 
                   minHeight: '24px', 
@@ -167,7 +240,7 @@ export const ChatInput = forwardRef<ChatInputRef>((_, ref) => {
             <Button
               size="icon"
               className={`flex-shrink-0 h-8 w-8 cursor-pointer ${isStreaming || isLoading ? 'bg-red-600 hover:bg-red-700 text-white' : ''}`}
-              disabled={isDisabled}
+              disabled={isDisabled && images.length === 0}
               onClick={isStreaming || isLoading ? handleStop : handleSubmit}
             >
               <motion.div

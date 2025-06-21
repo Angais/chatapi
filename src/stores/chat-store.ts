@@ -2,9 +2,18 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { devtools } from 'zustand/middleware'
 
+export interface MessageContent {
+  type: 'text' | 'image_url'
+  text?: string
+  image_url?: {
+    url: string
+    detail?: 'auto' | 'low' | 'high'
+  }
+}
+
 export interface Message {
   id: string
-  content: string
+  content: string | MessageContent[]
   isUser: boolean
   timestamp: string
   // Información de depuración para Dev Mode
@@ -12,7 +21,7 @@ export interface Message {
     // Para mensajes del usuario (enviados a la API)
     sentToAPI?: {
       model: string
-      messages: Array<{ role: string; content: string }>
+      messages: Array<{ role: string; content: string | MessageContent[] }>
       temperature?: number
       max_tokens?: number
       max_completion_tokens?: number
@@ -63,6 +72,21 @@ export const REALTIME_MODELS = [
 
 // Modelos que soportan reasoning effort
 export const REASONING_MODELS = ['o3', 'o3-pro', 'o4-mini']
+
+// Models that support vision/image inputs
+export const VISION_MODELS = [
+  'gpt-4o',
+  'gpt-4o-mini',
+  'gpt-4.1',
+  'gpt-4.1-mini',
+  'gpt-4.1-nano',
+  'gpt-4-turbo',
+  'gpt-4-vision-preview',
+  'gpt-4o-2024-11-20',
+  'gpt-4o-2024-08-06',
+  'gpt-4o-2024-05-13',
+  'gpt-4o-mini-2024-07-18',
+]
 
 // Modelos que deben ser excluidos de la lista (nunca mostrar)
 export const EXCLUDED_MODELS = [
@@ -116,6 +140,7 @@ export interface Chat {
   reasoningEffort?: ReasoningEffort
   voiceMode?: VoiceMode
   isVoiceSessionEnded?: boolean
+  hasImages?: boolean
 }
 
 // Add new interface for streaming sessions
@@ -198,7 +223,7 @@ interface ChatState {
   
   // Actions
   init: () => void
-  addMessage: (content: string, isUser: boolean, debugInfo?: any) => void
+  addMessage: (content: string | MessageContent[], isUser: boolean, debugInfo?: any) => void
   updateMessage: (messageId: string, newContent: string) => void
   setLoading: (loading: boolean) => void
   setStreaming: (streaming: boolean) => void
@@ -208,7 +233,7 @@ interface ChatState {
   setError: (error: string | null) => void
   setUnsupportedModelError: (error: string | null) => void
   clearMessages: () => void
-  sendMessage: (content: string) => Promise<void>
+  sendMessage: (content: string, images?: Array<{ url: string; file: File }>) => Promise<void>
   fetchModels: () => Promise<void>
   
   // Chat history actions
@@ -235,6 +260,8 @@ interface ChatState {
   // Streaming helpers
   isReasoningModel: (modelId?: string) => boolean
   isRealtimeModel: (modelId?: string) => boolean
+  isVisionModel: (modelId?: string) => boolean
+  chatHasImages: (chatId?: string) => boolean
   
   // NEW: Computed getters for current chat streaming
   getCurrentChatStreaming: () => StreamingSession | null
@@ -379,7 +406,7 @@ export const useChatStore = create<ChatState>()(
             }
           },
 
-          addMessage: (content: string, isUser: boolean, debugInfo?: any) => {
+          addMessage: (content: string | MessageContent[], isUser: boolean, debugInfo?: any) => {
             const newMessage: Message = {
               id: Date.now().toString(),
               content,
@@ -397,9 +424,22 @@ export const useChatStore = create<ChatState>()(
               
               // If this is the first message and we don't have a current chat, create one
               if (!state.currentChatId && isUser) {
+                // Generate title from content
+                let title: string
+                if (typeof content === 'string') {
+                  title = generateChatTitle(content)
+                } else {
+                  // For array content, find the first text content
+                  const textContent = content.find(c => c.type === 'text')?.text || 'Image conversation'
+                  title = generateChatTitle(textContent)
+                }
+                
+                // Check if there are images
+                const hasImages = Array.isArray(content) && content.some(c => c.type === 'image_url')
+                
                 const newChat: Chat = {
                   id: Date.now().toString(),
-                  title: generateChatTitle(content),
+                  title,
                   messages: updatedMessages,
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
@@ -407,6 +447,7 @@ export const useChatStore = create<ChatState>()(
                   reasoningEffort: get().reasoningEffort,
                   voiceMode: get().voiceMode,
                   isVoiceSessionEnded: false,
+                  hasImages,
                 }
                 
                 return {
@@ -566,7 +607,6 @@ export const useChatStore = create<ChatState>()(
           clearMessages: () => set({ messages: [], error: null, unsupportedModelError: null }),
 
           createNewChat: () => {
-            const state = get()
             
             // preserve the preferred model
             const preferredModel = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
@@ -681,12 +721,11 @@ export const useChatStore = create<ChatState>()(
             }
           },
 
-          sendMessage: async (content: string) => {
+          sendMessage: async (content: string, images?: Array<{ url: string; file: File }>) => {
             const apiKey = localStorage.getItem('openai_api_key')
             let model = get().selectedModel
             const reasoningEffort = get().reasoningEffort
             const devMode = get().devMode
-            const currentChatId = get().currentChatId
             const systemInstructions = get().systemInstructions
             
             if (!apiKey) {
@@ -720,9 +759,26 @@ export const useChatStore = create<ChatState>()(
               ...currentMessages.map(msg => ({
                 role: msg.isUser ? 'user' : 'assistant',
                 content: msg.content,
-              })),
-              { role: 'user', content }
+              }))
             )
+            
+            // Prepare user message with images if present
+            let userMessageContent: string | MessageContent[] = content
+            if (images && images.length > 0) {
+              const contentArray: MessageContent[] = []
+              if (content) {
+                contentArray.push({ type: 'text', text: content })
+              }
+              images.forEach(img => {
+                contentArray.push({
+                  type: 'image_url',
+                  image_url: { url: img.url, detail: 'auto' }
+                })
+              })
+              userMessageContent = contentArray
+            }
+            
+            messagesToSend.push({ role: 'user', content: userMessageContent })
 
             // Debug info for user message
             const userDebugInfo = devMode ? {
@@ -739,7 +795,18 @@ export const useChatStore = create<ChatState>()(
             } : undefined
 
             // Add user message with debug info
-            get().addMessage(content, true, userDebugInfo)
+            get().addMessage(userMessageContent, true, userDebugInfo)
+            
+            // Mark chat as having images if necessary
+            if (images && images.length > 0) {
+              set(state => ({
+                chats: state.chats.map(chat => 
+                  chat.id === state.currentChatId 
+                    ? { ...chat, hasImages: true }
+                    : chat
+                )
+              }))
+            }
             
             // Get the current chat ID after adding message (in case a new chat was created)
             const chatId = get().currentChatId
@@ -1130,6 +1197,21 @@ export const useChatStore = create<ChatState>()(
           isRealtimeModel: (modelId?: string) => {
             const model = modelId || get().selectedModel
             return REALTIME_MODELS.some(rm => rm.id === model)
+          },
+
+          isVisionModel: (modelId?: string) => {
+            const model = modelId || get().selectedModel
+            return VISION_MODELS.some(vm => model.includes(vm))
+          },
+
+          chatHasImages: (chatId?: string) => {
+            const targetChatId = chatId || get().currentChatId
+            if (!targetChatId) return false
+            
+            const chat = get().chats.find(c => c.id === targetChatId)
+            if (!chat) return false
+            
+            return chat.hasImages || false
           },
 
           // NEW: Computed getters for current chat streaming

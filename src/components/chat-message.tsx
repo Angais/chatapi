@@ -5,14 +5,14 @@ import { Copy, Info, Check, Edit2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Highlight, themes } from 'prism-react-renderer'
 import { useTheme } from '@/hooks/use-theme'
-import { useChatStore } from '@/stores/chat-store'
+import { useChatStore, MessageContent } from '@/stores/chat-store'
 import { DevInfoModal } from '@/components/dev-info-modal'
 import ReactMarkdown from 'react-markdown'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { Message } from '@/stores/chat-store'
 
 interface ChatMessageProps {
-  content: string
+  content: string | MessageContent[]
   isUser: boolean
   timestamp?: string
   message?: Message
@@ -180,16 +180,31 @@ function CopyButton({
   )
 }
 
-export function ChatMessage({ content, isUser, timestamp, message, isStreaming = false }: ChatMessageProps) {
+export function ChatMessage({ content, isUser, message, isStreaming = false }: ChatMessageProps) {
   const [showCopyButton, setShowCopyButton] = useState(false)
   const [showDevModal, setShowDevModal] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
-  const [editedContent, setEditedContent] = useState(content)
+  const [editedContent, setEditedContent] = useState(typeof content === 'string' ? content : '')
   const { devMode, updateMessage } = useChatStore()
+  
+  // Helper to extract text content from MessageContent array
+  const getTextContent = (content: string | MessageContent[]): string => {
+    if (typeof content === 'string') return content
+    const textContent = content.find(c => c.type === 'text')
+    return textContent?.text || ''
+  }
+  
+  // Helper to extract image URLs from MessageContent array
+  const getImageUrls = (content: string | MessageContent[]): string[] => {
+    if (typeof content === 'string') return []
+    return content
+      .filter(c => c.type === 'image_url' && c.image_url)
+      .map(c => c.image_url!.url)
+  }
 
   // Keep local draft in sync
   useEffect(() => {
-    if (!isEditing) setEditedContent(content)
+    if (!isEditing) setEditedContent(getTextContent(content))
   }, [content, isEditing])
 
   const handleMessageClick = (e: React.MouseEvent) => {
@@ -237,6 +252,25 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                 } break-words`}
               >
                 <div className="space-y-3">
+                  {/* Display images if present */}
+                  {getImageUrls(content).length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {getImageUrls(content).map((url, index) => (
+                        <img
+                          key={index}
+                          src={url}
+                          alt={`Image ${index + 1}`}
+                          className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                          style={{ maxHeight: '300px' }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            window.open(url, '_blank')
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  
                   {isUser ? (
                     isEditing ? (
                       <textarea
@@ -247,14 +281,14 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                         autoFocus
                       />
                     ) : (
-                      <span className="whitespace-pre-wrap break-words" data-message-content>{content}</span>
+                      <span className="whitespace-pre-wrap break-words" data-message-content>{getTextContent(content)}</span>
                     )
                   ) : (
                     <div className="w-full" data-message-content>
                       {isStreaming ? (
                         // Para streaming, renderizar como texto plano con cursor al final
                         <div className="whitespace-pre-wrap break-words">
-                          {content}
+                          {getTextContent(content)}
                           <StreamingCursor />
                         </div>
                       ) : (
@@ -262,7 +296,7 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                         <div className="markdown-content">
                           <ReactMarkdown
                             components={{
-                              code: ({ node, className, children, ...props }) => {
+                              code: ({ className, children, ...props }) => {
                                 const match = /language-(\w+)/.exec(className || '')
                                 return match ? (
                                   <CodeBlock className={className}>
@@ -292,7 +326,7 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                               ),
                             }}
                           >
-                            {content}
+                            {getTextContent(content)}
                           </ReactMarkdown>
                         </div>
                       )}
@@ -304,12 +338,12 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
               {/* Actions for AI messages - always reserve space */}
               {!isUser && (
                 <div className={`flex items-center gap-1 mt-2 h-7 transition-all duration-200 ${
-                  isStreaming || !content.trim() ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                  isStreaming || !getTextContent(content).trim() ? 'opacity-0 pointer-events-none' : 'opacity-100'
                 }`}>
                   <CopyButton
-                    content={content}
+                    content={getTextContent(content)}
                     className={`h-7 px-2 text-xs`}
-                    disabled={isStreaming || !content.trim()}
+                    disabled={isStreaming || !getTextContent(content).trim()}
                   />
                   {devMode && message && (
                     <Button
@@ -318,7 +352,7 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                       className="h-7 px-2 text-xs cursor-pointer"
                       onClick={() => setShowDevModal(true)}
                       title="Development information"
-                      disabled={isStreaming || !content.trim()}
+                      disabled={isStreaming || !getTextContent(content).trim()}
                     >
                       <Info className="w-3 h-3" />
                     </Button>
@@ -334,7 +368,7 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                   {!isEditing && (
                     <>
                       <CopyButton
-                        content={content}
+                        content={getTextContent(content)}
                         className="h-7 px-2 text-xs"
                         disabled={false}
                       />
@@ -355,7 +389,7 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                         variant="ghost"
                         size="sm"
                         className="h-7 px-2 text-xs cursor-pointer"
-                        onClick={(e) => { e.stopPropagation(); setIsEditing(false); setEditedContent(content) }}
+                        onClick={(e) => { e.stopPropagation(); setIsEditing(false); setEditedContent(getTextContent(content)) }}
                         title="Cancel"
                       >
                         <X className="w-3 h-3" />
@@ -371,7 +405,7 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
                           setIsEditing(false)
                         }}
                         title="Save"
-                        disabled={editedContent.trim() === content.trim()}
+                        disabled={editedContent.trim() === getTextContent(content).trim()}
                       >
                         <Check className="w-3 h-3" />
                       </Button>
