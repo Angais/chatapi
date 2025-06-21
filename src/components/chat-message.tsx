@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Copy, Info, Check } from 'lucide-react'
+import { Copy, Info, Check, Edit2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Highlight, themes } from 'prism-react-renderer'
 import { useTheme } from '@/hooks/use-theme'
@@ -183,7 +183,14 @@ function CopyButton({
 export function ChatMessage({ content, isUser, timestamp, message, isStreaming = false }: ChatMessageProps) {
   const [showCopyButton, setShowCopyButton] = useState(false)
   const [showDevModal, setShowDevModal] = useState(false)
-  const { devMode } = useChatStore()
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedContent, setEditedContent] = useState(content)
+  const { devMode, updateMessage } = useChatStore()
+
+  // Keep local draft in sync
+  useEffect(() => {
+    if (!isEditing) setEditedContent(content)
+  }, [content, isEditing])
 
   const handleMessageClick = (e: React.MouseEvent) => {
     if (isUser) {
@@ -231,7 +238,17 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
               >
                 <div className="space-y-3">
                   {isUser ? (
-                    <span className="whitespace-pre-wrap break-words" data-message-content>{content}</span>
+                    isEditing ? (
+                      <textarea
+                        value={editedContent}
+                        onChange={(e) => setEditedContent(e.target.value)}
+                        className="w-full bg-transparent outline-none resize-none"
+                        rows={Math.min(6, editedContent.split('\n').length)}
+                        autoFocus
+                      />
+                    ) : (
+                      <span className="whitespace-pre-wrap break-words" data-message-content>{content}</span>
+                    )
                   ) : (
                     <div className="w-full" data-message-content>
                       {isStreaming ? (
@@ -312,13 +329,54 @@ export function ChatMessage({ content, isUser, timestamp, message, isStreaming =
               {/* Actions for user messages */}
               {isUser && (
                 <div className={`flex items-center gap-1 mt-2 transition-opacity duration-300 ease-out ${
-                  showCopyButton ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  showCopyButton || isEditing ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                 }`}>
-                  <CopyButton
-                    content={content}
-                    className={`h-7 px-2 text-xs`}
-                    disabled={false}
-                  />
+                  {!isEditing && (
+                    <>
+                      <CopyButton
+                        content={content}
+                        className="h-7 px-2 text-xs"
+                        disabled={false}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs cursor-pointer"
+                        onClick={(e) => { e.stopPropagation(); setIsEditing(true) }}
+                        title="Edit message"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </Button>
+                    </>
+                  )}
+                  {isEditing && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs cursor-pointer"
+                        onClick={(e) => { e.stopPropagation(); setIsEditing(false); setEditedContent(content) }}
+                        title="Cancel"
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const trimmed = editedContent.trim()
+                          if (trimmed && message) updateMessage(message.id, trimmed)
+                          setIsEditing(false)
+                        }}
+                        title="Save"
+                        disabled={editedContent.trim() === content.trim()}
+                      >
+                        <Check className="w-3 h-3" />
+                      </Button>
+                    </>
+                  )}
                   {devMode && message && (
                     <Button
                       variant="ghost"

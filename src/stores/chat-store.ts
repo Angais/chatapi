@@ -199,6 +199,7 @@ interface ChatState {
   // Actions
   init: () => void
   addMessage: (content: string, isUser: boolean, debugInfo?: any) => void
+  updateMessage: (messageId: string, newContent: string) => void
   setLoading: (loading: boolean) => void
   setStreaming: (streaming: boolean) => void
   setStreamingMessage: (message: string) => void
@@ -422,6 +423,44 @@ export const useChatStore = create<ChatState>()(
               
               // Only update messages array immediately
               return { messages: updatedMessages }
+            })
+          },
+
+          updateMessage: (messageId: string, newContent: string) => {
+            const { currentChatId } = get()
+            if (!currentChatId) return
+
+            set((state) => {
+              // Update messages currently in view
+              const updatedMessages = state.messages.map(m =>
+                m.id === messageId ? { ...m, content: newContent } : m
+              )
+
+              // Update the chat stored in history
+              const updatedChats = state.chats.map(chat => {
+                if (chat.id !== currentChatId) return chat
+
+                // Refresh messages inside that chat
+                const updatedChatMessages = chat.messages.map(m =>
+                  m.id === messageId ? { ...m, content: newContent } : m
+                )
+
+                // If the first message changed, refresh the title
+                const newTitle =
+                  chat.messages.length &&
+                  chat.messages[0].id === messageId
+                    ? generateChatTitle(newContent)
+                    : chat.title
+
+                return {
+                  ...chat,
+                  messages: updatedChatMessages,
+                  title: newTitle,
+                  updatedAt: new Date().toISOString(),
+                }
+              })
+
+              return { messages: updatedMessages, chats: updatedChats }
             })
           },
 
