@@ -529,15 +529,14 @@ export const useChatStore = create<ChatState>()(
           createNewChat: () => {
             const state = get()
             
-            // Only save if there are messages
-            if (state.currentChatId && state.messages.length > 0) {
-              // Chat is already auto-saved, no need to update again
-            }
-            
+            // preserve the preferred model
             const preferredModel = localStorage.getItem('openai_preferred_model') || 'gpt-4o-mini'
             const defaultReasoningEffort = get().getDefaultReasoningEffort(preferredModel)
-            
-            // Clear current chat
+
+            // ➜ keep voiceMode if the preferred model is realtime, otherwise reset to "none"
+            const shouldKeepVoice =
+              REALTIME_MODELS.some(rm => rm.id === preferredModel)
+
             set({
               currentChatId: null,
               messages: [],
@@ -545,7 +544,7 @@ export const useChatStore = create<ChatState>()(
               unsupportedModelError: null,
               selectedModel: preferredModel,
               reasoningEffort: defaultReasoningEffort,
-              voiceMode: 'none', // Always reset to none
+              voiceMode: shouldKeepVoice ? 'text-to-voice' : 'none',
               isVoiceSessionEnded: false,
             })
           },
