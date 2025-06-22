@@ -141,6 +141,7 @@ export interface Chat {
   voiceMode?: VoiceMode
   isVoiceSessionEnded?: boolean
   hasImages?: boolean
+  totalCost?: number // Add total cost tracking
 }
 
 // Add new interface for streaming sessions
@@ -174,6 +175,53 @@ export const TRANSCRIPTION_MODELS = [
   { id: 'gpt-4o-mini-transcribe', name: 'GPT-4o Mini Transcribe' },
   { id: 'whisper-1', name: 'Whisper' },
 ]
+
+// Add pricing data (updated with official OpenAI pricing as of 2025)
+export const MODEL_PRICING = {
+  // GPT-4o models (standard chat)
+  'gpt-4o': { input: 0.0025, output: 0.01 }, // per 1K tokens
+  'gpt-4o-2024-11-20': { input: 0.0025, output: 0.01 },
+  'gpt-4o-2024-08-06': { input: 0.0025, output: 0.01 },
+  'gpt-4o-2024-05-13': { input: 0.005, output: 0.015 },
+  'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
+  'gpt-4o-mini-2024-07-18': { input: 0.00015, output: 0.0006 },
+  
+  // GPT-4.1 models
+  'gpt-4.1': { input: 0.002, output: 0.008 }, // $2.00/$8.00 per 1M tokens
+  'gpt-4.1-mini': { input: 0.0004, output: 0.0016 }, // $0.40/$1.60 per 1M tokens
+  'gpt-4.1-nano': { input: 0.0001, output: 0.0004 }, // $0.10/$0.40 per 1M tokens
+  
+  // GPT-4 models  
+  'gpt-4': { input: 0.03, output: 0.06 },
+  'gpt-4-turbo': { input: 0.01, output: 0.03 },
+  'gpt-4-turbo-2024-04-09': { input: 0.01, output: 0.03 },
+  'gpt-4-0125-preview': { input: 0.01, output: 0.03 },
+  'gpt-4-1106-preview': { input: 0.01, output: 0.03 },
+  
+  // o1 models (legacy)
+  'o1': { input: 0.015, output: 0.06 },
+  'o1-preview': { input: 0.015, output: 0.06 },
+  'o1-mini': { input: 0.003, output: 0.012 },
+  
+  // Reasoning models (updated with official pricing)
+  'o3': { input: 0.002, output: 0.008 }, // $2.00/$8.00 per 1M tokens
+  'o3-pro': { input: 0.002, output: 0.008 }, // Same as o3 for now
+  'o4-mini': { input: 0.0011, output: 0.0044 }, // $1.10/$4.40 per 1M tokens
+  
+  // Realtime API models (text pricing)
+  'gpt-4o-realtime-preview': { input: 0.005, output: 0.02 }, // $5.00/$20.00 per 1M tokens
+  'gpt-4o-mini-realtime-preview': { input: 0.0006, output: 0.0024 }, // $0.60/$2.40 per 1M tokens
+  'gpt-4o-realtime-preview-2024-10-01': { input: 0.005, output: 0.02 },
+  'gpt-4o-mini-realtime-preview-2024-12-17': { input: 0.0006, output: 0.0024 },
+  'gpt-4o-realtime-preview-2024-12-17': { input: 0.005, output: 0.02 },
+  
+  // GPT-3.5 models
+  'gpt-3.5-turbo': { input: 0.0005, output: 0.0015 },
+  'gpt-3.5-turbo-0125': { input: 0.0005, output: 0.0015 },
+  
+  // Default fallback
+  'default': { input: 0.001, output: 0.002 }
+} as const
 
 interface ChatState {
   // Current chat state
@@ -288,6 +336,11 @@ interface ChatState {
   // Transcription settings actions
   setTranscriptionModel: (model: string) => void
   setTranscriptionLanguage: (language: string) => void
+  
+  // Cost calculation helpers
+  calculateMessageCost: (usage: any, model: string) => number
+  getChatCost: (chatId?: string) => number
+  getTotalCost: () => number
 }
 
 // Helper function to generate chat title from first message
@@ -926,6 +979,8 @@ export const useChatStore = create<ChatState>()(
                         try {
                           const parsed = JSON.parse(data)
                           
+                          console.log('Streaming chunk:', parsed)
+                          
                           if (parsed.error) {
                             if (parsed.unsupportedModel) {
                               // Remove messages and show error
@@ -982,6 +1037,7 @@ export const useChatStore = create<ChatState>()(
                           }
                           if (parsed.usage) {
                             usage = parsed.usage
+                            console.log('Usage data captured:', usage)
                           }
                         } catch (e: any) {
                           if (e.message !== 'Unexpected end of JSON input') {
@@ -1010,11 +1066,14 @@ export const useChatStore = create<ChatState>()(
                   }
                 } : undefined
 
+                // Calculate cost if usage is available
+                const messageCost = usage ? get().calculateMessageCost(usage, model) : 0
+
                 // Finalize the message
                 set(state => {
                   // Update the placeholder message with final content and debug info
                   const finalMessage = {
-                    id: Date.now().toString(), // Give it a proper ID
+                    id: Date.now().toString(),
                     content: fullResponse,
                     isUser: false,
                     timestamp: new Date().toLocaleTimeString('en-US', {
@@ -1025,7 +1084,7 @@ export const useChatStore = create<ChatState>()(
                     debugInfo: assistantDebugInfo,
                   }
                   
-                  // Update chats array
+                  // Update chats array and calculate new total cost
                   const updatedChats = state.chats.map(chat => {
                     if (chat.id === chatId) {
                       const updatedMessages = chat.messages.map((msg, idx) => 
@@ -1033,7 +1092,16 @@ export const useChatStore = create<ChatState>()(
                           ? finalMessage
                           : msg
                       )
-                      return { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                      
+                      // Calculate new total cost for this chat
+                      const newTotalCost = get().getChatCost(chat.id) + messageCost
+                      
+                      return { 
+                        ...chat, 
+                        messages: updatedMessages, 
+                        updatedAt: new Date().toISOString(),
+                        totalCost: newTotalCost
+                      }
                     }
                     return chat
                   })
@@ -1366,6 +1434,42 @@ export const useChatStore = create<ChatState>()(
             set({ transcriptionLanguage })
             localStorage.setItem('openai_transcription_language', transcriptionLanguage)
           },
+
+          // NEW: Cost calculation helpers
+          calculateMessageCost: (usage: any, model: string) => {
+            if (!usage || !usage.prompt_tokens || !usage.completion_tokens) return 0
+            
+            const pricing = MODEL_PRICING[model as keyof typeof MODEL_PRICING] || MODEL_PRICING.default
+            const inputCost = (usage.prompt_tokens / 1000) * pricing.input
+            const outputCost = (usage.completion_tokens / 1000) * pricing.output
+            
+            return inputCost + outputCost
+          },
+
+          getChatCost: (chatId?: string) => {
+            const targetChatId = chatId || get().currentChatId
+            if (!targetChatId) return 0
+            
+            const chat = get().chats.find(c => c.id === targetChatId)
+            if (!chat) return 0
+            
+            return chat.messages.reduce((total, message) => {
+              if (message.debugInfo?.receivedFromAPI?.usage) {
+                const cost = get().calculateMessageCost(
+                  message.debugInfo.receivedFromAPI.usage,
+                  message.debugInfo.receivedFromAPI.model || chat.model
+                )
+                return total + cost
+              }
+              return total
+            }, 0)
+          },
+
+          getTotalCost: () => {
+            return get().chats.reduce((total, chat) => {
+              return total + get().getChatCost(chat.id)
+            }, 0)
+          },
         }
       },
       {
@@ -1388,7 +1492,7 @@ export const useChatStore = create<ChatState>()(
           transcriptionModel: state.transcriptionModel,
           transcriptionLanguage: state.transcriptionLanguage,
         }),
-        version: 5,
+        version: 6,
         migrate: (persistedState: any, version: number) => {
           if (version < 2) {
             if (persistedState && persistedState.chats) {
@@ -1426,6 +1530,14 @@ export const useChatStore = create<ChatState>()(
                   isVoiceSessionEnded: false,
                 }))
               }
+            }
+          }
+          if (version < 6) {
+            if (persistedState && persistedState.chats) {
+              persistedState.chats = persistedState.chats.map((chat: any) => ({
+                ...chat,
+                totalCost: 0, // Initialize with 0 cost
+              }))
             }
           }
           return persistedState

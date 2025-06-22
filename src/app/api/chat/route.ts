@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
               model: selectedModel,
               messages: messages,
               stream: true,
+              stream_options: { include_usage: true },
             }
 
             if (!needsReasoningEffort) {
@@ -77,6 +78,7 @@ export async function POST(request: NextRequest) {
                   model: selectedModel,
                   messages: messages,
                   stream: true,
+                  stream_options: { include_usage: true },
                 }
 
                 if (error?.message?.includes("'max_tokens' is not supported")) {

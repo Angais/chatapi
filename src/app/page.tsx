@@ -13,6 +13,7 @@ import { VoiceChatControls } from '@/components/voice-chat-controls'
 import { useChatStore } from '@/stores/chat-store'
 import { AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ChatCostDisplay } from '@/components/chat-cost-display'
 
 export default function ChatPage() {
   const { 
@@ -218,13 +219,20 @@ export default function ChatPage() {
           )}
           
           <UnsupportedModelDisclaimer />
+          
+          {/* Show cost display when there are messages */}
+          <AnimatePresence>
+            {messages.length > 0 && <ChatCostDisplay />}
+          </AnimatePresence>
+          
           {/* Voice Chat Controls - only show for realtime models with voice mode enabled */}
           <AnimatePresence>
             {isRealtimeModel() && voiceMode !== 'none' && (
               <VoiceChatControls />
             )}
           </AnimatePresence>
-          <ChatInput ref={chatInputRef} />
+          {/* @ts-ignore */}
+          <ChatInput ref={chatInputRef as any} />
         </main>
       </div>
     </div>

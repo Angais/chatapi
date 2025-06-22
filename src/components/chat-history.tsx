@@ -13,10 +13,12 @@ interface ChatHistoryProps {
 }
 
 export function ChatHistory({ isOpen }: ChatHistoryProps) {
-  const { chats, currentChatId, loadChat, deleteChat, updateChatTitle, getStreamingChats } = useChatStore()
+  const { chats, currentChatId, loadChat, deleteChat, updateChatTitle, getStreamingChats, getChatCost, getTotalCost } = useChatStore()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const streamingChats = getStreamingChats()
+
+  const totalCost = getTotalCost()
 
   const handleEdit = (chatId: string, currentTitle: string) => {
     setEditingId(chatId)
@@ -64,9 +66,16 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
           }}
           className="fixed left-0 top-14 bottom-0 w-80 bg-background border-r border-border z-40 overflow-hidden flex flex-col"
         >
-          {/* Header */}
+          {/* Header with total cost */}
           <div className="p-4 border-b border-border">
-            <h2 className="font-semibold text-sm">Chat History</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-sm">Chat History</h2>
+              {totalCost > 0 && (
+                <div className="text-xs text-muted-foreground font-mono">
+                  Total: ${totalCost.toFixed(4)}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Chat list */}
@@ -79,6 +88,7 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
               <div className="p-2">
                 {chats.map((chat) => {
                   const isStreaming = streamingChats.includes(chat.id)
+                  const chatCost = getChatCost(chat.id)
                   
                   return (
                     <motion.div
@@ -139,14 +149,21 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                               <p className="text-sm font-medium truncate">
                                 {chat.title}
                               </p>
-                              <p className="text-xs text-muted-foreground">
-                                {formatDate(chat.updatedAt)}
-                                {isStreaming && (
-                                  <span className="ml-2 text-green-600 dark:text-green-400">
-                                    • Streaming
+                              <div className="flex items-center justify-between">
+                                <p className="text-xs text-muted-foreground">
+                                  {formatDate(chat.updatedAt)}
+                                  {isStreaming && (
+                                    <span className="ml-2 text-green-600 dark:text-green-400">
+                                      • Streaming
+                                    </span>
+                                  )}
+                                </p>
+                                {chatCost > 0 && (
+                                  <span className="text-xs text-muted-foreground font-mono">
+                                    ${chatCost.toFixed(4)}
                                   </span>
                                 )}
-                              </p>
+                              </div>
                             </div>
                           </div>
                         </button>
