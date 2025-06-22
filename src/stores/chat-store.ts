@@ -1622,6 +1622,52 @@ export const useChatStore = create<ChatState>()(
                               finalMessageProcessed = true
                               return // Exit early to avoid processing at the end
                             }
+                          } else if (parsed.type === 'image_generation_id') {
+                            console.log('🎬 [IMAGE STREAMING] Received image generation ID:', parsed.imageGenerationId)
+                            
+                            // Update the final message with the image generation ID
+                            set(state => {
+                              const currentSession = state.streamingSessions.get(chatId)
+                              const targetPlaceholderId = currentSession?.placeholderId
+                              
+                              if (!targetPlaceholderId) {
+                                console.warn('🎬 [IMAGE STREAMING] No placeholder ID found for image generation ID update')
+                                return state
+                              }
+                              
+                              const updatedMessages = state.messages.map(msg => {
+                                if (msg.id === targetPlaceholderId) {
+                                  return { 
+                                    ...msg, 
+                                    imageGenerationId: parsed.imageGenerationId
+                                  }
+                                }
+                                return msg
+                              })
+                              
+                              const updatedChats = state.chats.map(chat => {
+                                if (chat.id === chatId) {
+                                  const chatMessages = chat.messages.map(msg => {
+                                    if (msg.id === targetPlaceholderId) {
+                                      return { 
+                                        ...msg, 
+                                        imageGenerationId: parsed.imageGenerationId
+                                      }
+                                    }
+                                    return msg
+                                  })
+                                  return { ...chat, messages: chatMessages, updatedAt: new Date().toISOString() }
+                                }
+                                return chat
+                              })
+                              
+                              if (state.currentChatId === chatId) {
+                                return { messages: updatedMessages, chats: updatedChats }
+                              }
+                              
+                              return { chats: updatedChats }
+                            })
+                            
                           } else if (parsed.type === 'error') {
                             console.error('🎬 [IMAGE STREAMING] Received error:', parsed.error)
                             throw new Error(parsed.error)

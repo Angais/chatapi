@@ -116,6 +116,9 @@ export async function POST(request: NextRequest) {
                 size: imageSize !== 'auto' ? imageSize : undefined,
               }],
             })
+            
+            // Store the response ID to retrieve the final response later
+            let responseId = ''
 
             console.log('🎬 [API] Response stream created, processing events...')
 
@@ -129,6 +132,12 @@ export async function POST(request: NextRequest) {
               
               // Cast to any to avoid TypeScript issues with new API types
               const eventAny = event as any
+              
+              // Capture the response ID from any event
+              if (eventAny.response_id && !responseId) {
+                responseId = eventAny.response_id
+                console.log('🎬 [API] Captured response ID:', responseId)
+              }
               
               if (eventAny.type === "response.image_generation_call.created") {
                 console.log('🎬 [API] Image generation call created')
@@ -215,6 +224,33 @@ export async function POST(request: NextRequest) {
               
               const finalDataStr = `data: ${JSON.stringify(finalData)}\n\n`
               controller.enqueue(encoder.encode(finalDataStr))
+            }
+
+            // After streaming completes, retrieve the final response to get the image generation ID
+            if (responseId) {
+              try {
+                console.log('🎬 [API] Retrieving final response to get image generation ID...')
+                const finalResponse = await openai.responses.retrieve(responseId)
+                const imageGenerationCalls = finalResponse.output.filter(
+                  (output: any) => output.type === "image_generation_call"
+                )
+                
+                if (imageGenerationCalls.length > 0) {
+                  const finalImageGenerationId = (imageGenerationCalls[0] as any).id
+                  console.log('🎬 [API] Final image generation ID:', finalImageGenerationId)
+                  
+                  // Send the image generation ID as a separate event
+                  const idData = {
+                    type: 'image_generation_id',
+                    imageGenerationId: finalImageGenerationId
+                  }
+                  
+                  const idDataStr = `data: ${JSON.stringify(idData)}\n\n`
+                  controller.enqueue(encoder.encode(idDataStr))
+                }
+              } catch (error) {
+                console.error('🎬 [API] Error retrieving final response:', error)
+              }
             }
 
             console.log('🎬 [API] Stream completed')
