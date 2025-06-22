@@ -70,9 +70,9 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
           <div className="p-4 border-b border-border">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-sm">Chat History</h2>
-              {totalCost > 0 && (
+              {totalCost !== 0 && (
                 <div className="text-xs text-muted-foreground font-mono">
-                  Total: ${totalCost.toFixed(4)}
+                  Total: {totalCost === -1 ? 'API price unknown' : `$${totalCost.toFixed(4)}`}
                 </div>
               )}
             </div>
@@ -158,9 +158,9 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                                     </span>
                                   )}
                                 </p>
-                                {chatCost > 0 && (
+                                {chatCost !== 0 && (
                                   <span className="text-xs text-muted-foreground font-mono">
-                                    ${chatCost.toFixed(4)}
+                                    {chatCost === -1 ? 'Price unknown' : `$${chatCost.toFixed(4)}`}
                                   </span>
                                 )}
                               </div>

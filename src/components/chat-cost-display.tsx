@@ -46,8 +46,7 @@ export function ChatCostDisplay() {
         <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <DollarSign className="h-3 w-3" />
           <span className="font-mono">
-            Current chat cost: ${currentCost.toFixed(4)}
-            {currentCost === 0 && ' (waiting for usage data...)'}
+            Current chat cost: {currentCost === -1 ? 'API price unknown' : `$${currentCost.toFixed(4)}`}
           </span>
         </div>
       </motion.div>
@@ -71,9 +70,9 @@ export function ChatCostDisplay() {
       <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
         <DollarSign className="h-3 w-3" />
         <span className="font-mono">
-          Current chat cost: ${currentCost.toFixed(4)}
+          Current chat cost: {currentCost === -1 ? 'API price unknown' : `$${currentCost.toFixed(4)}`}
         </span>
-        {costIncrease > 0 && (
+        {costIncrease > 0 && costIncrease !== -1 && (
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}

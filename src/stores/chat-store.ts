@@ -178,49 +178,19 @@ export const TRANSCRIPTION_MODELS = [
 
 // Add pricing data (updated with official OpenAI pricing as of 2025)
 export const MODEL_PRICING = {
-  // GPT-4o models (standard chat)
-  'gpt-4o': { input: 0.0025, output: 0.01 }, // per 1K tokens
-  'gpt-4o-2024-11-20': { input: 0.0025, output: 0.01 },
-  'gpt-4o-2024-08-06': { input: 0.0025, output: 0.01 },
-  'gpt-4o-2024-05-13': { input: 0.005, output: 0.015 },
-  'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
-  'gpt-4o-mini-2024-07-18': { input: 0.00015, output: 0.0006 },
+  // Add regular GPT-4o pricing
+  'gpt-4o': { input: 0.0025, output: 0.01 }, // $2.50/$10.00 per 1M tokens
+  'gpt-4o-mini': { input: 0.00015, output: 0.0006 }, // $0.15/$0.60 per 1M tokens
   
-  // GPT-4.1 models
-  'gpt-4.1': { input: 0.002, output: 0.008 }, // $2.00/$8.00 per 1M tokens
-  'gpt-4.1-mini': { input: 0.0004, output: 0.0016 }, // $0.40/$1.60 per 1M tokens
-  'gpt-4.1-nano': { input: 0.0001, output: 0.0004 }, // $0.10/$0.40 per 1M tokens
-  
-  // GPT-4 models  
-  'gpt-4': { input: 0.03, output: 0.06 },
-  'gpt-4-turbo': { input: 0.01, output: 0.03 },
-  'gpt-4-turbo-2024-04-09': { input: 0.01, output: 0.03 },
-  'gpt-4-0125-preview': { input: 0.01, output: 0.03 },
-  'gpt-4-1106-preview': { input: 0.01, output: 0.03 },
-  
-  // o1 models (legacy)
-  'o1': { input: 0.015, output: 0.06 },
-  'o1-preview': { input: 0.015, output: 0.06 },
-  'o1-mini': { input: 0.003, output: 0.012 },
-  
-  // Reasoning models (updated with official pricing)
-  'o3': { input: 0.002, output: 0.008 }, // $2.00/$8.00 per 1M tokens
-  'o3-pro': { input: 0.002, output: 0.008 }, // Same as o3 for now
-  'o4-mini': { input: 0.0011, output: 0.0044 }, // $1.10/$4.40 per 1M tokens
-  
-  // Realtime API models (text pricing)
-  'gpt-4o-realtime-preview': { input: 0.005, output: 0.02 }, // $5.00/$20.00 per 1M tokens
-  'gpt-4o-mini-realtime-preview': { input: 0.0006, output: 0.0024 }, // $0.60/$2.40 per 1M tokens
-  'gpt-4o-realtime-preview-2024-10-01': { input: 0.005, output: 0.02 },
-  'gpt-4o-mini-realtime-preview-2024-12-17': { input: 0.0006, output: 0.0024 },
-  'gpt-4o-realtime-preview-2024-12-17': { input: 0.005, output: 0.02 },
-  
-  // GPT-3.5 models
-  'gpt-3.5-turbo': { input: 0.0005, output: 0.0015 },
-  'gpt-3.5-turbo-0125': { input: 0.0005, output: 0.0015 },
-  
-  // Default fallback
-  'default': { input: 0.001, output: 0.002 }
+  // Only keep models with confirmed pricing
+  'gpt-4.1': { input: 0.002, output: 0.008 },
+  'gpt-4.1-mini': { input: 0.0004, output: 0.0016 },
+  'gpt-4.1-nano': { input: 0.0001, output: 0.0004 },
+  'o3': { input: 0.002, output: 0.008 },
+  'o4-mini': { input: 0.0011, output: 0.0044 },
+  'gpt-4o-realtime-preview': { input: 0.005, output: 0.02 },
+  'gpt-4o-mini-realtime-preview': { input: 0.0006, output: 0.0024 },
+  // Remove 'default' fallback
 } as const
 
 interface ChatState {
@@ -1439,7 +1409,11 @@ export const useChatStore = create<ChatState>()(
           calculateMessageCost: (usage: any, model: string) => {
             if (!usage || !usage.prompt_tokens || !usage.completion_tokens) return 0
             
-            const pricing = MODEL_PRICING[model as keyof typeof MODEL_PRICING] || MODEL_PRICING.default
+            const pricing = MODEL_PRICING[model as keyof typeof MODEL_PRICING]
+            
+            // If no pricing data available, return -1 to indicate unknown pricing
+            if (!pricing) return -1
+            
             const inputCost = (usage.prompt_tokens / 1000) * pricing.input
             const outputCost = (usage.completion_tokens / 1000) * pricing.output
             
@@ -1453,22 +1427,41 @@ export const useChatStore = create<ChatState>()(
             const chat = get().chats.find(c => c.id === targetChatId)
             if (!chat) return 0
             
-            return chat.messages.reduce((total, message) => {
+            let totalCost = 0
+            let hasUnknownPricing = false
+            
+            chat.messages.forEach(message => {
               if (message.debugInfo?.receivedFromAPI?.usage) {
                 const cost = get().calculateMessageCost(
                   message.debugInfo.receivedFromAPI.usage,
                   message.debugInfo.receivedFromAPI.model || chat.model
                 )
-                return total + cost
+                if (cost === -1) {
+                  hasUnknownPricing = true
+                } else {
+                  totalCost += cost
+                }
               }
-              return total
-            }, 0)
+            })
+            
+            // Return -1 if any message has unknown pricing, otherwise return total
+            return hasUnknownPricing ? -1 : totalCost
           },
 
           getTotalCost: () => {
-            return get().chats.reduce((total, chat) => {
-              return total + get().getChatCost(chat.id)
-            }, 0)
+            let totalCost = 0
+            let hasUnknownPricing = false
+            
+            get().chats.forEach(chat => {
+              const chatCost = get().getChatCost(chat.id)
+              if (chatCost === -1) {
+                hasUnknownPricing = true
+              } else {
+                totalCost += chatCost
+              }
+            })
+            
+            return hasUnknownPricing ? -1 : totalCost
           },
         }
       },
