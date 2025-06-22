@@ -95,6 +95,17 @@ export type ImageQuality = 'low' | 'medium' | 'high'
 // Image streaming option
 export type ImageStreaming = 'enabled' | 'disabled'
 
+// Image aspect ratio options
+export type ImageAspectRatio = 'square' | 'portrait' | 'landscape' | 'auto'
+
+// Available aspect ratios with their sizes
+export const ASPECT_RATIOS = [
+  { id: 'square' as const, name: 'Square', size: '1024x1024' },
+  { id: 'portrait' as const, name: 'Portrait', size: '1024x1536' },
+  { id: 'landscape' as const, name: 'Landscape', size: '1536x1024' },
+  { id: 'auto' as const, name: 'Auto', size: 'auto' },
+]
+
 // Add image models - gpt-4o supports image generation with Responses API
 // Using internal ID to distinguish from regular gpt-4o
 export const IMAGE_MODELS = [
@@ -210,6 +221,7 @@ interface ChatState {
   // NEW: Image generation settings
   imageQuality: ImageQuality
   imageStreaming: ImageStreaming
+  imageAspectRatio: ImageAspectRatio
   
   // NEW: Track streaming sessions per chat
   streamingSessions: Map<string, StreamingSession>
@@ -256,7 +268,7 @@ interface ChatState {
   setUnsupportedModelError: (error: string | null) => void
   clearMessages: () => void
   sendMessage: (content: string, images?: Array<{ url: string; file: File }>) => Promise<void>
-  sendImageMessage: (prompt: string) => Promise<void>
+  sendImageMessage: (prompt: string, images?: Array<{ url: string; file: File }>) => Promise<void>
   fetchModels: () => Promise<void>
   
   // Chat history actions
@@ -272,6 +284,7 @@ interface ChatState {
   // NEW: Image generation actions
   setImageQuality: (quality: ImageQuality) => void
   setImageStreaming: (streaming: ImageStreaming) => void
+  setImageAspectRatio: (aspectRatio: ImageAspectRatio) => void
   
   // Dev Mode actions
   setDevMode: (devMode: boolean) => void
@@ -371,6 +384,7 @@ export const useChatStore = create<ChatState>()(
           // NEW: Default image generation settings
           imageQuality: 'medium',
           imageStreaming: 'enabled',
+          imageAspectRatio: 'square',
           
           // NEW: Initialize streaming sessions
           streamingSessions: new Map(),
@@ -1110,13 +1124,15 @@ export const useChatStore = create<ChatState>()(
             }
           },
 
-          sendImageMessage: async (prompt: string) => {
+          sendImageMessage: async (prompt: string, images?: Array<{ url: string; file: File }>) => {
             const apiKey = localStorage.getItem('openai_api_key')
             const model = get().selectedModel
             const apiModel = get().getApiModelId(model) // Map internal ID to API ID
             const imageQuality = get().imageQuality
             const imageStreaming = get().imageStreaming
+            const imageAspectRatio = get().imageAspectRatio
             const devMode = get().devMode
+            const currentChatMessages = get().messages
             
             if (!apiKey) {
               set({ error: 'Please set your OpenAI API key in settings' })
@@ -1132,6 +1148,29 @@ export const useChatStore = create<ChatState>()(
             // Clear previous errors
             set({ error: null, unsupportedModelError: null })
 
+            // Create message content with text and images
+            const messageContent: MessageContent[] = [
+              {
+                type: 'text',
+                text: prompt,
+              }
+            ]
+
+            // Add uploaded images to message content
+            if (images && images.length > 0) {
+              console.log('🎬 [IMAGE GENERATION] Adding', images.length, 'uploaded images to user message')
+              images.forEach((image, index) => {
+                console.log(`🎬 [IMAGE GENERATION] Adding image ${index + 1}:`, image.url.substring(0, 50) + '...')
+                messageContent.push({
+                  type: 'image_url',
+                  image_url: {
+                    url: image.url,
+                    detail: 'high'
+                  }
+                })
+              })
+            }
+
             // Debug info for user message
             const userDebugInfo = devMode ? {
               sentToAPI: {
@@ -1139,12 +1178,15 @@ export const useChatStore = create<ChatState>()(
                 prompt,
                 quality: imageQuality,
                 streaming: imageStreaming,
+                aspectRatio: imageAspectRatio,
+                hasImages: !!(images && images.length > 0),
                 timestamp: new Date().toISOString(),
               }
             } : undefined
 
-            // Add user message with debug info
-            get().addMessage(prompt, true, userDebugInfo)
+            // Add user message with debug info (use array content if images, otherwise string)
+            const userContent = messageContent.length > 1 ? messageContent : prompt
+            get().addMessage(userContent, true, userDebugInfo)
             
             // Get the current chat ID after adding message (in case a new chat was created)
             const chatId = get().currentChatId
@@ -1190,6 +1232,124 @@ export const useChatStore = create<ChatState>()(
               // Always set the abort controller for both streaming and final-only modes
               get().updateStreamingSession(chatId, { abortController: controller })
 
+              // Prepare messages for multi-turn (include previous context if available)
+              const messagesForAPI = []
+              
+              // Add previous messages for multi-turn context
+              if (currentChatMessages.length > 1) {
+                console.log('🎬 [IMAGE GENERATION] Adding', currentChatMessages.length - 1, 'previous messages for context')
+                console.log('🎬 [IMAGE GENERATION] Previous messages preview:', currentChatMessages.slice(0, -1).map((m, i) => ({ 
+                  index: i,
+                  isUser: m.isUser, 
+                  contentType: typeof m.content, 
+                  isArray: Array.isArray(m.content),
+                  hasImageUrl: Array.isArray(m.content) && m.content.some(item => item.type === 'image_url'),
+                  preview: typeof m.content === 'string' ? m.content.slice(0, 100) : `[${Array.isArray(m.content) ? m.content.length : 'unknown'} items]`
+                })))
+                
+                // Convert messages to API format, excluding the just-added user message
+                for (let i = 0; i < currentChatMessages.length - 1; i++) {
+                  const msg = currentChatMessages[i]
+                  console.log(`🎬 [IMAGE GENERATION] Processing message ${i + 1}:`, {
+                    isUser: msg.isUser,
+                    contentType: typeof msg.content,
+                    isArray: Array.isArray(msg.content),
+                    content: Array.isArray(msg.content) ? msg.content.map(item => ({ type: item.type, hasUrl: !!item.image_url?.url })) : 'string'
+                  })
+                  
+                  // Convert content format for API compatibility
+                  let apiContent: any = msg.content
+                  if (Array.isArray(msg.content)) {
+                    apiContent = msg.content.map(item => {
+                      if (item.type === 'text') {
+                        // Convert 'text' to 'input_text' for API compatibility
+                        return {
+                          type: 'input_text',
+                          text: item.text
+                        }
+                      } else if (item.type === 'image_url') {
+                        // Convert image_url to input_image for API compatibility
+                        console.log(`🎬 [IMAGE GENERATION] Converting image_url to input_image:`, { url: item.image_url?.url?.slice(0, 50) + '...' })
+                        return {
+                          type: 'input_image',
+                          image_url: item.image_url?.url
+                        }
+                      }
+                      return item
+                    })
+                  } else if (typeof msg.content === 'string' && !msg.isUser) {
+                    // Check if this is a generated image message (assistant message with base64 image)
+                    const imageMatch = msg.content.match(/data:image\/[^;]+;base64,([^)]+)/)
+                    if (imageMatch) {
+                      console.log(`🎬 [IMAGE GENERATION] Found generated image in assistant message ${i + 1}, converting to image_generation_call`)
+                      // For generated images, use the image_generation_call format
+                      apiContent = [{
+                        type: 'image_generation_call',
+                        result: imageMatch[1] // Just the base64 data without the data: prefix
+                      }]
+                    } else {
+                      // Regular text message
+                      apiContent = [{
+                        type: 'input_text',
+                        text: msg.content
+                      }]
+                    }
+                  } else {
+                    // String user message
+                    apiContent = [{
+                      type: 'input_text',
+                      text: msg.content
+                    }]
+                  }
+                  
+                  messagesForAPI.push({
+                    role: msg.isUser ? 'user' : 'assistant',
+                    content: apiContent
+                  })
+                  console.log(`🎬 [IMAGE GENERATION] Added message ${i + 1}:`, msg.isUser ? 'user' : 'assistant', Array.isArray(apiContent) ? `[${apiContent.length} items: ${apiContent.map(c => c.type).join(', ')}]` : typeof apiContent)
+                }
+              }
+
+              // Convert current user message content for API compatibility
+              let apiUserContent: any = userContent
+              if (Array.isArray(userContent)) {
+                apiUserContent = userContent.map(item => {
+                  if (item.type === 'text') {
+                    return {
+                      type: 'input_text',
+                      text: item.text
+                    }
+                  } else if (item.type === 'image_url') {
+                    return {
+                      type: 'input_image',
+                      image_url: item.image_url?.url
+                    }
+                  }
+                  return item
+                })
+              } else if (typeof userContent === 'string') {
+                // Convert string to proper format
+                apiUserContent = [{
+                  type: 'input_text',
+                  text: userContent
+                }]
+              }
+
+              // Add current user message
+              messagesForAPI.push({
+                role: 'user',
+                content: apiUserContent
+              })
+              
+              console.log('🎬 [IMAGE GENERATION] Final API messages count:', messagesForAPI.length)
+              console.log('🎬 [IMAGE GENERATION] Current user message content type:', Array.isArray(apiUserContent) ? `array with ${apiUserContent.length} items` : 'string')
+              console.log('🎬 [IMAGE GENERATION] Complete API messages structure:', messagesForAPI.map((msg, i) => ({
+                index: i,
+                role: msg.role,
+                contentItems: Array.isArray(msg.content) ? msg.content.length : 1,
+                contentTypes: Array.isArray(msg.content) ? msg.content.map(c => c.type) : [typeof msg.content]
+              })))
+
               const response = await fetch('/api/image-generation', {
                 method: 'POST',
                 headers: {
@@ -1201,6 +1361,9 @@ export const useChatStore = create<ChatState>()(
                   model: apiModel, // Use the mapped API model ID
                   quality: imageQuality,
                   streaming: imageStreaming,
+                  aspectRatio: imageAspectRatio,
+                  messages: messagesForAPI, // Send full conversation context
+                  inputImages: images?.map(img => img.url) || [], // Send uploaded images
                 }),
                 signal: controller.signal,
               })
@@ -1242,6 +1405,7 @@ export const useChatStore = create<ChatState>()(
                 let buffer = '' // Buffer to accumulate incomplete JSON chunks
                 const responseTime = Date.now() - startTime
                 let partialCount = 0
+                let finalMessageProcessed = false
 
                 console.log('🎬 [IMAGE STREAMING] Starting image stream processing...')
 
@@ -1284,10 +1448,13 @@ export const useChatStore = create<ChatState>()(
                             partialCount++
                             console.log(`🎬 [IMAGE STREAMING] Processing partial image #${partialCount} (${parsed.progress}%)`)
                             
-                            // If progress is 100%, this is the final image
-                            if (parsed.progress === 100) {
-                              console.log('🎬 [IMAGE STREAMING] Final image received via partial_image')
-                              finalImageData = parsed.image
+                            // Always store the latest image as potential final image
+                            finalImageData = parsed.image
+                            console.log('🎬 [IMAGE STREAMING] Updated finalImageData with latest partial image')
+                            
+                            // If progress is 100% or this is the highest progress we've seen, treat as final
+                            if (parsed.progress >= 67) { // 67% is typically the last partial image
+                              console.log('🎬 [IMAGE STREAMING] This appears to be the final image (progress >= 67%)')
                             }
                             
                             // Store partial image in persistent cache
@@ -1299,7 +1466,7 @@ export const useChatStore = create<ChatState>()(
                             const partialImageContent: MessageContent[] = [
                               {
                                 type: 'text',
-                                text: parsed.progress === 100 ? `Generated image for: "${prompt}"` : `Generating image... (${parsed.progress}%)`
+                                text: `Generating image... (${parsed.progress}%)`
                               },
                               {
                                 type: 'image_url',
@@ -1312,39 +1479,108 @@ export const useChatStore = create<ChatState>()(
                             
                             console.log('🎬 [IMAGE STREAMING] Updating UI with partial image')
                             
-                            // Update placeholder message with partial image
+                            // Update placeholder message with partial image (optimized to avoid reloads)
                             set(state => {
-                                                  // console.log('🎬 [IMAGE STREAMING] Current messages count:', state.messages.length)
-                    const updatedMessages = state.messages.map((msg, idx) => {
-                      if (idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
-                        // console.log('🎬 [IMAGE STREAMING] Updating message with partial image')
-                        return { ...msg, content: partialImageContent }
-                      }
-                      return msg
-                    })
+                              // Find the placeholder message ID first
+                              const placeholderIndex = state.messages.findIndex(msg => 
+                                !msg.isUser && msg.id.endsWith('_ai_image')
+                              )
                               
-                              const updatedChats = state.chats.map(chat => {
-                                if (chat.id === chatId) {
-                                  const chatMessages = chat.messages.map((msg, idx) => {
-                                    if (idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
-                                      return { ...msg, content: partialImageContent }
-                                    }
-                                    return msg
-                                  })
-                                  return { ...chat, messages: chatMessages, updatedAt: new Date().toISOString() }
-                                }
-                                return chat
-                              })
+                              if (placeholderIndex === -1) return state // No placeholder found
                               
+                              // Only update the specific message, don't recreate arrays
+                              const updatedMessages = [...state.messages]
+                              updatedMessages[placeholderIndex] = { 
+                                ...updatedMessages[placeholderIndex], 
+                                content: partialImageContent 
+                              }
+                              
+                              // Only update current chat if this is the current chat
                               if (state.currentChatId === chatId) {
+                                // Also update in chats array for persistence
+                                const updatedChats = state.chats.map(chat => {
+                                  if (chat.id === chatId) {
+                                    const chatMessages = [...chat.messages]
+                                    const chatPlaceholderIndex = chatMessages.findIndex(msg => 
+                                      !msg.isUser && msg.id.endsWith('_ai_image')
+                                    )
+                                    if (chatPlaceholderIndex !== -1) {
+                                      chatMessages[chatPlaceholderIndex] = { 
+                                        ...chatMessages[chatPlaceholderIndex], 
+                                        content: partialImageContent 
+                                      }
+                                    }
+                                    return { ...chat, messages: chatMessages, updatedAt: new Date().toISOString() }
+                                  }
+                                  return chat
+                                })
+                                
                                 return { messages: updatedMessages, chats: updatedChats }
                               }
                               
-                              return { chats: updatedChats }
+                              return state // No changes if not current chat
                             })
                           } else if (parsed.type === 'complete') {
-                            console.log('🎬 [IMAGE STREAMING] Received final image')
+                            console.log('🎬 [IMAGE STREAMING] Received final image, replacing with final message')
                             finalImageData = parsed.image
+                            
+                            // Immediately update with final image to avoid double replacement
+                            if (finalImageData) {
+                              const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+                              
+                              // Store final image in cache
+                              storeImage(imageId, finalImageData).catch(console.error)
+                              
+                              const finalImageContent: MessageContent[] = [
+                                {
+                                  type: 'text',
+                                  text: `Generated image for: "${prompt}"`
+                                },
+                                {
+                                  type: 'image_url',
+                                  image_url: {
+                                    url: `cache:${imageId}`,
+                                    detail: 'auto'
+                                  }
+                                }
+                              ]
+                              
+                              console.log('🎬 [IMAGE STREAMING] Replacing placeholder with final message')
+                              
+                              // Replace placeholder message with final image
+                              set(state => {
+                                const updatedMessages = state.messages.map((msg, idx) => {
+                                  if (idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                                    return { ...msg, content: finalImageContent }
+                                  }
+                                  return msg
+                                })
+                                
+                                const updatedChats = state.chats.map(chat => {
+                                  if (chat.id === chatId) {
+                                    const chatMessages = chat.messages.map((msg, idx) => {
+                                      if (idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                                        return { ...msg, content: finalImageContent }
+                                      }
+                                      return msg
+                                    })
+                                    return { ...chat, messages: chatMessages, updatedAt: new Date().toISOString() }
+                                  }
+                                  return chat
+                                })
+                                
+                                if (state.currentChatId === chatId) {
+                                  return { messages: updatedMessages, chats: updatedChats }
+                                }
+                                
+                                return { chats: updatedChats }
+                              })
+                              
+                              // Clean up streaming session since we're done
+                              get().cleanupStreamingSession(chatId)
+                              finalMessageProcessed = true
+                              return // Exit early to avoid processing at the end
+                            }
                           } else if (parsed.type === 'error') {
                             console.error('🎬 [IMAGE STREAMING] Received error:', parsed.error)
                             throw new Error(parsed.error)
@@ -1370,7 +1606,12 @@ export const useChatStore = create<ChatState>()(
                   throw error
                 }
 
-                // Check if we have image data
+                // Check if we have image data (and haven't already processed the final message)
+                if (finalMessageProcessed) {
+                  console.log('🎬 [IMAGE STREAMING] Final message already processed, skipping end processing')
+                  return
+                }
+                
                 if (!finalImageData || finalImageData.length === 0) {
                   console.log('🎬 [IMAGE STREAMING] No image data received, showing informative message')
                   
@@ -1986,6 +2227,10 @@ export const useChatStore = create<ChatState>()(
 
           setImageStreaming: (streaming: ImageStreaming) => {
             set({ imageStreaming: streaming })
+          },
+
+          setImageAspectRatio: (aspectRatio: ImageAspectRatio) => {
+            set({ imageAspectRatio: aspectRatio })
           },
 
           // NEW: Helper to check if model is image generation model
