@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { storeImage, cleanupOldImages } from '@/lib/image-cache'
 import { devtools } from 'zustand/middleware'
 
 export interface MessageContent {
@@ -88,6 +89,17 @@ export const VISION_MODELS = [
   'gpt-4o-mini-2024-07-18',
 ]
 
+// Image quality types for image generation
+export type ImageQuality = 'low' | 'medium' | 'high'
+
+// Image streaming option
+export type ImageStreaming = 'enabled' | 'disabled'
+
+// Add image models - gpt-4o supports image generation with Responses API
+export const IMAGE_MODELS = [
+  'gpt-4o'
+]
+
 // Modelos que deben ser excluidos de la lista (nunca mostrar)
 export const EXCLUDED_MODELS = [
   'codex-mini-latest',
@@ -95,6 +107,7 @@ export const EXCLUDED_MODELS = [
   'gpt-4o-audio-preview-2025-06-03',
   'dall-e-3',
   'dall-e-2',
+  'gpt-image-1', // Keep excluded since we use gpt-4o for images now
   'tts-1-hd',
   'tts-1-1106',
   'tts-1-hd-1106',
@@ -119,7 +132,6 @@ export const EXCLUDED_MODELS = [
   'gpt-4o-transcribe',
   'gpt-4o-mini-transcribe',
   'gpt-4o-mini-tts',
-  'gpt-image-1',
   'tts-1',
   'whisper-1',
   'text-embedding-ada-002',
@@ -189,6 +201,10 @@ interface ChatState {
   voiceMode: VoiceMode
   isVoiceSessionEnded: boolean
   
+  // NEW: Image generation settings
+  imageQuality: ImageQuality
+  imageStreaming: ImageStreaming
+  
   // NEW: Track streaming sessions per chat
   streamingSessions: Map<string, StreamingSession>
   
@@ -234,6 +250,7 @@ interface ChatState {
   setUnsupportedModelError: (error: string | null) => void
   clearMessages: () => void
   sendMessage: (content: string, images?: Array<{ url: string; file: File }>) => Promise<void>
+  sendImageMessage: (prompt: string) => Promise<void>
   fetchModels: () => Promise<void>
   
   // Chat history actions
@@ -245,6 +262,10 @@ interface ChatState {
   setReasoningEffort: (effort: ReasoningEffort) => void
   setVoiceMode: (mode: VoiceMode) => void
   setVoiceSessionEnded: (ended: boolean) => void
+  
+  // NEW: Image generation actions
+  setImageQuality: (quality: ImageQuality) => void
+  setImageStreaming: (streaming: ImageStreaming) => void
   
   // Dev Mode actions
   setDevMode: (devMode: boolean) => void
@@ -261,6 +282,7 @@ interface ChatState {
   isReasoningModel: (modelId?: string) => boolean
   isRealtimeModel: (modelId?: string) => boolean
   isVisionModel: (modelId?: string) => boolean
+  isImageModel: (modelId?: string) => boolean
   chatHasImages: (chatId?: string) => boolean
   
   // NEW: Computed getters for current chat streaming
@@ -330,21 +352,30 @@ export const useChatStore = create<ChatState>()(
           currentChatId: null,
           messages: [],
           isLoading: false,
-          isStreaming: false, // DEPRECATED
-          streamingMessage: '', // DEPRECATED
-          abortController: null, // DEPRECATED
+          isStreaming: false,
+          streamingMessage: '',
+          abortController: null,
           error: null,
-          selectedModel: 'gpt-4o-mini',
-          chats: [],
-          models: [],
-          isLoadingModels: false,
-          modelsError: null,
-          reasoningEffort: 'no-reasoning',
+          selectedModel: 'gpt-4o',
+          reasoningEffort: 'medium',
           voiceMode: 'none',
           isVoiceSessionEnded: false,
-          devMode: false,
+          
+          // NEW: Default image generation settings
+          imageQuality: 'medium',
+          imageStreaming: 'enabled',
+          
+          // NEW: Initialize streaming sessions
+          streamingSessions: new Map(),
+          
+                  chats: [],
+        models: [],
+        isLoadingModels: false,
+        modelsError: null,
+        devMode: false,
           unsupportedModelError: null,
-          streamingSessions: new Map(), // NEW
+          
+          // Settings
           temperature: 0.7,
           maxTokens: 1000,
           voice: 'alloy',
@@ -403,6 +434,9 @@ export const useChatStore = create<ChatState>()(
                 selectedModel: modelToSet,
                 reasoningEffort: reasoningEffortToSet
               })
+              
+              // Cleanup old images on init (older than 7 days)
+              cleanupOldImages().catch(console.error)
             }
           },
 
@@ -1069,6 +1103,449 @@ export const useChatStore = create<ChatState>()(
             }
           },
 
+          sendImageMessage: async (prompt: string) => {
+            const apiKey = localStorage.getItem('openai_api_key')
+            const model = get().selectedModel
+            const imageQuality = get().imageQuality
+            const imageStreaming = get().imageStreaming
+            const devMode = get().devMode
+            
+            if (!apiKey) {
+              set({ error: 'Please set your OpenAI API key in settings' })
+              return
+            }
+
+            // Only allow image generation for image models
+            if (!get().isImageModel(model)) {
+              set({ error: 'Current model does not support image generation' })
+              return
+            }
+
+            // Clear previous errors
+            set({ error: null, unsupportedModelError: null })
+
+            // Debug info for user message
+            const userDebugInfo = devMode ? {
+              sentToAPI: {
+                model,
+                prompt,
+                quality: imageQuality,
+                streaming: imageStreaming,
+                timestamp: new Date().toISOString(),
+              }
+            } : undefined
+
+            // Add user message with debug info
+            get().addMessage(prompt, true, userDebugInfo)
+            
+            // Get the current chat ID after adding message (in case a new chat was created)
+            const chatId = get().currentChatId
+            if (!chatId) return
+
+            // Create streaming session for this chat if streaming is enabled
+            if (imageStreaming === 'enabled') {
+              get().createStreamingSession(chatId)
+            }
+            
+            // Add placeholder AI message with progress indicator for streaming
+            const placeholderMessage: Message = {
+              id: Date.now().toString() + '_ai_image',
+              content: imageStreaming === 'enabled' ? 'Starting image generation...' : '',
+              isUser: false,
+              timestamp: new Date().toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+              }),
+            }
+            
+            // Add placeholder to both current messages AND the chat in history
+            set(state => {
+              const updatedMessages = [...state.messages, placeholderMessage]
+              
+              // Also update the chat in history to include the placeholder
+              const updatedChats = state.chats.map(chat =>
+                chat.id === chatId
+                  ? { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                  : chat
+              )
+              
+              return {
+                messages: updatedMessages,
+                chats: updatedChats,
+                isLoading: true
+              }
+            })
+
+            const startTime = Date.now()
+
+            try {
+              const controller = new AbortController()
+              if (imageStreaming === 'enabled') {
+                get().updateStreamingSession(chatId, { abortController: controller })
+              }
+
+              const response = await fetch('/api/image-generation', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  prompt,
+                  apiKey,
+                  model,
+                  quality: imageQuality,
+                  streaming: imageStreaming,
+                }),
+                signal: controller.signal,
+              })
+
+              if (!response.ok) {
+                const errorData = await response.json()
+                if (errorData.unsupportedModel) {
+                  // Remove the placeholder and user message
+                  set(state => {
+                    const updatedMessages = state.messages.slice(0, -2)
+                    const updatedChats = state.chats.map(chat =>
+                      chat.id === chatId
+                        ? { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                        : chat
+                    )
+                    
+                    return {
+                      messages: state.currentChatId === chatId ? updatedMessages : state.messages,
+                      chats: updatedChats,
+                      unsupportedModelError: errorData.error,
+                      isLoading: false
+                    }
+                  })
+                  if (imageStreaming === 'enabled') {
+                    get().cleanupStreamingSession(chatId)
+                  }
+                  return
+                }
+                throw new Error(errorData.error || 'Failed to generate image')
+              }
+
+              // Handle streaming response
+              if (imageStreaming === 'enabled' && response.body) {
+                get().updateStreamingSession(chatId, { isStreaming: true })
+                set({ isLoading: false })
+                
+                const reader = response.body.getReader()
+                const decoder = new TextDecoder()
+                let finalImageData = ''
+                let buffer = '' // Buffer to accumulate incomplete JSON chunks
+                const responseTime = Date.now() - startTime
+                let partialCount = 0
+
+                console.log('🎬 [IMAGE STREAMING] Starting image stream processing...')
+
+                try {
+                  while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) {
+                      console.log('🎬 [IMAGE STREAMING] Stream completed')
+                      break
+                    }
+                    
+                    const chunk = decoder.decode(value, { stream: true })
+                    console.log('🎬 [IMAGE STREAMING] Received chunk length:', chunk.length)
+                    
+                    // Add chunk to buffer
+                    buffer += chunk
+                    
+                    // Process complete lines from buffer
+                    const lines = buffer.split('\n')
+                    
+                    // Keep the last line in buffer in case it's incomplete
+                    buffer = lines.pop() || ''
+                    
+                    for (const line of lines) {
+                      if (line.startsWith('data: ')) {
+                        const data = line.slice(6).trim()
+                        if (data === '[DONE]') {
+                          console.log('🎬 [IMAGE STREAMING] Received [DONE] signal')
+                          break
+                        }
+                        
+                        if (data === '') continue // Skip empty data lines
+                        
+                        try {
+                          console.log('🎬 [IMAGE STREAMING] Parsing JSON data of length:', data.length)
+                          const parsed = JSON.parse(data)
+                          console.log('🎬 [IMAGE STREAMING] Parsed event type:', parsed.type, 'progress:', parsed.progress)
+                          
+                          if (parsed.type === 'partial_image') {
+                            partialCount++
+                            console.log(`🎬 [IMAGE STREAMING] Processing partial image #${partialCount} (${parsed.progress}%)`)
+                            
+                            // If progress is 100%, this is the final image
+                            if (parsed.progress === 100) {
+                              console.log('🎬 [IMAGE STREAMING] Final image received via partial_image')
+                              finalImageData = parsed.image
+                            }
+                            
+                            // Store partial image in persistent cache
+                            const partialImageId = `partial_img_${Date.now()}_${partialCount}`
+                            // Store in IndexedDB asynchronously (don't block UI)
+                            storeImage(partialImageId, parsed.image).catch(console.error)
+                            
+                            // Show partial image during generation
+                            const partialImageContent: MessageContent[] = [
+                              {
+                                type: 'text',
+                                text: parsed.progress === 100 ? `Generated image for: "${prompt}"` : `Generating image... (${parsed.progress}%)`
+                              },
+                              {
+                                type: 'image_url',
+                                image_url: {
+                                  url: `cache:${partialImageId}`,
+                                  detail: 'auto'
+                                }
+                              }
+                            ]
+                            
+                            console.log('🎬 [IMAGE STREAMING] Updating UI with partial image')
+                            
+                            // Update placeholder message with partial image
+                            set(state => {
+                              console.log('🎬 [IMAGE STREAMING] Current messages count:', state.messages.length)
+                              const updatedMessages = state.messages.map((msg, idx) => {
+                                if (idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                                  console.log('🎬 [IMAGE STREAMING] Updating message with partial image')
+                                  return { ...msg, content: partialImageContent }
+                                }
+                                return msg
+                              })
+                              
+                              const updatedChats = state.chats.map(chat => {
+                                if (chat.id === chatId) {
+                                  const chatMessages = chat.messages.map((msg, idx) => {
+                                    if (idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                                      return { ...msg, content: partialImageContent }
+                                    }
+                                    return msg
+                                  })
+                                  return { ...chat, messages: chatMessages, updatedAt: new Date().toISOString() }
+                                }
+                                return chat
+                              })
+                              
+                              if (state.currentChatId === chatId) {
+                                return { messages: updatedMessages, chats: updatedChats }
+                              }
+                              
+                              return { chats: updatedChats }
+                            })
+                          } else if (parsed.type === 'complete') {
+                            console.log('🎬 [IMAGE STREAMING] Received final image')
+                            finalImageData = parsed.image
+                          } else if (parsed.type === 'error') {
+                            console.error('🎬 [IMAGE STREAMING] Received error:', parsed.error)
+                            throw new Error(parsed.error)
+                          }
+                        } catch (e: any) {
+                          if (e.message.includes('Unexpected end of JSON input') || e.message.includes('Unterminated string')) {
+                            console.log('🎬 [IMAGE STREAMING] JSON chunk incomplete, waiting for more data...')
+                            // Put the incomplete data back in buffer
+                            buffer = 'data: ' + data + '\n' + buffer
+                          } else {
+                            console.error('🎬 [IMAGE STREAMING] JSON parse error:', e.message)
+                            console.error('🎬 [IMAGE STREAMING] Problematic data (first 200 chars):', data.substring(0, 200))
+                          }
+                        }
+                      }
+                    }
+                  }
+                } catch (error: any) {
+                  if (error.name === 'AbortError') {
+                    // Stream was cancelled - stopStreaming() already handled saving
+                    return
+                  }
+                  throw error
+                }
+
+                // Store image in persistent cache
+                const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+                
+                // Store in IndexedDB asynchronously (don't block UI)
+                storeImage(imageId, finalImageData).catch(console.error)
+                
+                // Create image content with reference to cached image
+                const imageContent: MessageContent[] = [
+                  {
+                    type: 'text',
+                    text: `Generated image for: "${prompt}"`
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `cache:${imageId}`, // Reference to cached image
+                      detail: 'auto'
+                    }
+                  }
+                ]
+
+                // Debug info for assistant response
+                const assistantDebugInfo = devMode ? {
+                  receivedFromAPI: {
+                    model,
+                    response: 'Image generated successfully',
+                    timestamp: new Date().toISOString(),
+                    responseTime,
+                  }
+                } : undefined
+
+                // Finalize the message with image
+                console.log('🎬 [IMAGE STREAMING] Finalizing message with complete image')
+                console.log('🎬 [IMAGE STREAMING] Final image data length:', finalImageData.length)
+                
+                set(state => {
+                  const finalMessage = {
+                    id: Date.now().toString(),
+                    content: imageContent,
+                    isUser: false,
+                    timestamp: new Date().toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    }),
+                    debugInfo: assistantDebugInfo,
+                  }
+                  
+                  console.log('🎬 [IMAGE STREAMING] Creating final message with content length:', imageContent.length)
+                  
+                  // Update chats array
+                  const updatedChats = state.chats.map(chat => {
+                    if (chat.id === chatId) {
+                      const updatedMessages = chat.messages.map((msg, idx) => {
+                        if (idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                          console.log('🎬 [IMAGE STREAMING] Replacing placeholder with final message')
+                          return finalMessage
+                        }
+                        return msg
+                      })
+                      return { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                    }
+                    return chat
+                  })
+                  
+                  // If this is the current chat, also update the current messages
+                  if (state.currentChatId === chatId) {
+                    const updatedMessages = state.messages.map((msg, idx) => {
+                      if (idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                        console.log('🎬 [IMAGE STREAMING] Replacing current message with final message')
+                        return finalMessage
+                      }
+                      return msg
+                    })
+                    return { messages: updatedMessages, chats: updatedChats }
+                  }
+                  
+                  return { chats: updatedChats }
+                })
+                
+                // Clean up streaming session
+                get().cleanupStreamingSession(chatId)
+                
+              } else {
+                // Non-streaming response
+                const imageData = await response.json()
+                const responseTime = Date.now() - startTime
+
+                // Store image in persistent cache
+                const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+                
+                // Store in IndexedDB asynchronously (don't block UI)
+                storeImage(imageId, imageData.image).catch(console.error)
+                
+                // Create image content
+                const imageContent: MessageContent[] = [
+                  {
+                    type: 'text',
+                    text: `Generated image for: "${prompt}"`
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `cache:${imageId}`,
+                      detail: 'auto'
+                    }
+                  }
+                ]
+
+                // Debug info for assistant response
+                const assistantDebugInfo = devMode ? {
+                  receivedFromAPI: {
+                    model,
+                    response: 'Image generated successfully',
+                    timestamp: new Date().toISOString(),
+                    responseTime,
+                  }
+                } : undefined
+
+                // Update the placeholder message with the image
+                set(state => {
+                  const finalMessage = {
+                    id: Date.now().toString(),
+                    content: imageContent,
+                    isUser: false,
+                    timestamp: new Date().toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    }),
+                    debugInfo: assistantDebugInfo,
+                  }
+                  
+                  // Update chats array
+                  const updatedChats = state.chats.map(chat => {
+                    if (chat.id === chatId) {
+                      const updatedMessages = chat.messages.map((msg, idx) => 
+                        idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')
+                          ? finalMessage
+                          : msg
+                      )
+                      return { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                    }
+                    return chat
+                  })
+                  
+                  // If this is the current chat, also update the current messages
+                  if (state.currentChatId === chatId) {
+                    const updatedMessages = state.messages.map((msg, idx) => 
+                      idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')
+                        ? finalMessage
+                        : msg
+                    )
+                    return { messages: updatedMessages, chats: updatedChats }
+                  }
+                  
+                  return { chats: updatedChats }
+                })
+              }
+            } catch (error: any) {
+              console.error('Image generation error:', error)
+              if (error.name !== 'AbortError') {
+                // Only set error if we're still on the same chat
+                if (get().currentChatId === chatId) {
+                  set({ 
+                    error: error?.message || 'An error occurred while generating the image',
+                  })
+                }
+                if (imageStreaming === 'enabled') {
+                  get().cleanupStreamingSession(chatId)
+                }
+              }
+            } finally {
+              // Only clear loading if we're still on the same chat
+              if (get().currentChatId === chatId) {
+                set({ isLoading: false })
+              }
+            }
+          },
+
           fetchModels: async () => {
             const apiKey = localStorage.getItem('openai_api_key')
             if (!apiKey) {
@@ -1361,6 +1838,21 @@ export const useChatStore = create<ChatState>()(
           setTranscriptionLanguage: (transcriptionLanguage: string) => {
             set({ transcriptionLanguage })
             localStorage.setItem('openai_transcription_language', transcriptionLanguage)
+          },
+
+          // NEW: Image generation actions
+          setImageQuality: (quality: ImageQuality) => {
+            set({ imageQuality: quality })
+          },
+
+          setImageStreaming: (streaming: ImageStreaming) => {
+            set({ imageStreaming: streaming })
+          },
+
+          // NEW: Helper to check if model is image generation model
+          isImageModel: (modelId?: string) => {
+            const model = modelId || get().selectedModel
+            return IMAGE_MODELS.includes(model)
           },
         }
       },

@@ -23,6 +23,7 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
   
   const { 
     sendMessage, 
+    sendImageMessage,
     isLoading, 
     isCurrentChatStreaming,
     stopStreaming, 
@@ -30,6 +31,7 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
     voiceMode,
     isRealtimeModel,
     isVisionModel,
+    isImageModel,
     isVoiceSessionEnded,
     setVoiceSessionEnded,
   } = useChatStore()
@@ -132,6 +134,14 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
       setMessage('')
       setImages([])
       
+      // Check if it's an image generation model
+      if (isImageModel() && messageToSend) {
+        // Use image generation for image models
+        await sendImageMessage(messageToSend)
+        setPreviousMessage('')
+        return
+      }
+      
       // Use voice chat for text-to-voice with realtime models
       if (isRealtimeModel() && voiceMode === 'text-to-voice') {
         // If the user manually ended the session, send as a regular message
@@ -189,7 +199,9 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
     }
   }
 
-  const isDisabled = !isStreaming && (!message.trim() || isLoading)
+  const isDisabled = !isStreaming && !isLoading && (
+    isImageModel() ? !message.trim() : (!message.trim() && images.length === 0)
+  )
 
   return (
     <motion.div
@@ -233,8 +245,8 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
               className="hidden"
             />
 
-            {/* Image upload button - only show for vision models */}
-            {isVisionModel() && !isRealtimeModel() && (
+            {/* Image upload button - only show for vision models, not image generation models */}
+            {isVisionModel() && !isRealtimeModel() && !isImageModel() && (
               <Button
                 type="button"
                 size="icon"
@@ -255,7 +267,13 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
-                placeholder={images.length > 0 ? "Add a message about the image(s)..." : "Type a message..."}
+                placeholder={
+                  isImageModel() 
+                    ? "Describe the image you want to generate..." 
+                    : images.length > 0 
+                      ? "Add a message about the image(s)..." 
+                      : "Type a message..."
+                }
                 className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground placeholder:select-none focus:outline-none"
                 style={{ 
                   minHeight: '24px', 
@@ -305,7 +323,8 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
             ) : (
               <>
                 Press Enter to send, Shift + Enter for new line
-                {isVisionModel() && !isRealtimeModel() && " • Paste images with Ctrl/Cmd + V"}
+                {isVisionModel() && !isRealtimeModel() && !isImageModel() && " • Paste images with Ctrl/Cmd + V"}
+                {isImageModel() && " • Describe the image you want to generate"}
               </>
             )}
           </motion.p>

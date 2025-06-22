@@ -10,6 +10,7 @@ import { DevInfoModal } from '@/components/dev-info-modal'
 import ReactMarkdown from 'react-markdown'
 import { useEffect, useState } from 'react'
 import { Message } from '@/stores/chat-store'
+import { retrieveImage } from '@/lib/image-cache'
 
 interface ChatMessageProps {
   content: string | MessageContent[]
@@ -202,6 +203,57 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
       .map(c => c.image_url!.url)
   }
 
+  // Component to handle async image loading from cache
+  const CachedImage = ({ url, alt, index }: { url: string; alt: string; index: number }) => {
+    const [imageSrc, setImageSrc] = useState<string>(url)
+    const [isLoading, setIsLoading] = useState(url.startsWith('cache:'))
+
+    useEffect(() => {
+      if (url.startsWith('cache:')) {
+        const cacheId = url.substring(6) // Remove 'cache:' prefix
+        
+        retrieveImage(cacheId)
+          .then(base64Data => {
+            if (base64Data) {
+              setImageSrc(`data:image/png;base64,${base64Data}`)
+            } else {
+              // Fallback placeholder
+              setImageSrc('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjOTk5Ii8+Cjwvc3ZnPgo=')
+            }
+          })
+          .catch(error => {
+            console.error('Failed to load cached image:', error)
+            setImageSrc('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjOTk5Ii8+Cjwvc3ZnPgo=')
+          })
+          .finally(() => {
+            setIsLoading(false)
+          })
+      }
+    }, [url])
+
+    return (
+      <div className="relative">
+        {isLoading && (
+          <div className="absolute inset-0 bg-muted animate-pulse rounded-lg flex items-center justify-center">
+            <div className="text-sm text-muted-foreground">Loading...</div>
+          </div>
+        )}
+        <img
+          src={imageSrc}
+          alt={alt}
+          className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+          style={{ maxHeight: '300px', opacity: isLoading ? 0 : 1 }}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!isLoading && imageSrc.startsWith('data:')) {
+              window.open(imageSrc, '_blank')
+            }
+          }}
+        />
+      </div>
+    )
+  }
+
   // Keep local draft in sync
   useEffect(() => {
     if (!isEditing) setEditedContent(getTextContent(content))
@@ -256,16 +308,11 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
                   {getImageUrls(content).length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-2">
                       {getImageUrls(content).map((url, index) => (
-                        <img
+                        <CachedImage
                           key={index}
-                          src={url}
+                          url={url}
                           alt={`Image ${index + 1}`}
-                          className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                          style={{ maxHeight: '300px' }}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            window.open(url, '_blank')
-                          }}
+                          index={index}
                         />
                       ))}
                     </div>

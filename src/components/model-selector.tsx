@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useChatStore, REALTIME_MODELS, VISION_MODELS } from '@/stores/chat-store'
+import { useChatStore, REALTIME_MODELS, VISION_MODELS, IMAGE_MODELS } from '@/stores/chat-store'
 import {
   Select,
   SelectItem,
@@ -10,8 +10,10 @@ import {
 } from '@/components/ui/select'
 import * as SelectPrimitive from '@radix-ui/react-select'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, ChevronDown, ChevronRight, Mic, AlertCircle } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronRight, Mic, AlertCircle, Image } from 'lucide-react'
 import { ReasoningEffortSelector } from './reasoning-effort-selector'
+import { ImageQualitySelector } from './image-quality-selector'
+import { ImageStreamingSelector } from './image-streaming-selector'
 import { cn } from '@/lib/utils'
 import {
   Tooltip,
@@ -219,6 +221,11 @@ export function ModelSelector() {
     const realtimeModel = REALTIME_MODELS.find(rm => rm.id === modelId)
     if (realtimeModel) return realtimeModel.displayName
     
+    // Check if it's an image generation model
+    if (IMAGE_MODELS.includes(modelId)) {
+      return modelId === 'gpt-4o' ? 'GPT-4o (Images)' : modelId
+    }
+    
     return modelId
   }
 
@@ -421,8 +428,44 @@ export function ModelSelector() {
               )
             })}
             
+            {/* Image generation models */}
+            {IMAGE_MODELS.length > 0 && (availablePresets.length > 0 || REALTIME_MODELS.length > 0) && (
+              <SelectSeparator />
+            )}
+            
+            {IMAGE_MODELS.map((modelId, index) => {
+              const displayName = modelId === 'gpt-4o' ? 'GPT-4o (Images)' : modelId
+              const disabled = isModelDisabled(modelId)
+              const tooltipContent = getDisabledTooltip(modelId)
+              
+              return (
+                <motion.div
+                  key={modelId}
+                  ref={modelId === selectedModel ? selectedItemRef : null}
+                  initial={shouldAnimatePresets ? { opacity: 0, x: -10 } : false}
+                  animate={shouldAnimatePresets ? { opacity: 1, x: 0 } : false}
+                  transition={shouldAnimatePresets ? { delay: (availablePresets.length + REALTIME_MODELS.length + index) * 0.02, duration: 0.15 } : {}}
+                >
+                  <DisableableSelectItem
+                    value={modelId}
+                    disabled={disabled}
+                    tooltipContent={tooltipContent}
+                  >
+                    <motion.div
+                      className="flex items-center gap-2 select-none"
+                      whileHover={!disabled ? { x: 2 } : {}}
+                      transition={{ duration: 0.1 }}
+                    >
+                      <Image className="h-3 w-3" />
+                      <span>{displayName}</span>
+                    </motion.div>
+                  </DisableableSelectItem>
+                </motion.div>
+              )
+            })}
+            
             {/* Separador y desplegable de otros modelos */}
-            {otherModels.length > 0 && (availablePresets.length > 0 || REALTIME_MODELS.length > 0) && (
+            {otherModels.length > 0 && (availablePresets.length > 0 || REALTIME_MODELS.length > 0 || IMAGE_MODELS.length > 0) && (
               <SelectSeparator />
             )}
             
@@ -501,6 +544,8 @@ export function ModelSelector() {
       </div>
       
       <ReasoningEffortSelector />
+      <ImageQualitySelector />
+      <ImageStreamingSelector />
     </div>
   )
 } 
