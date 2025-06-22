@@ -223,7 +223,7 @@ export function ModelSelector() {
     
     // Check if it's an image generation model
     if (IMAGE_MODELS.includes(modelId)) {
-      return modelId === 'gpt-4o' ? 'GPT-4o (Images)' : modelId
+      return modelId === 'gpt-4o-images' ? 'GPT-4o (Images)' : modelId
     }
     
     return modelId
@@ -434,7 +434,7 @@ export function ModelSelector() {
             )}
             
             {IMAGE_MODELS.map((modelId, index) => {
-              const displayName = modelId === 'gpt-4o' ? 'GPT-4o (Images)' : modelId
+              const displayName = modelId === 'gpt-4o-images' ? 'GPT-4o (Images)' : modelId
               const disabled = isModelDisabled(modelId)
               const tooltipContent = getDisabledTooltip(modelId)
               

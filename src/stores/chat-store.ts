@@ -96,9 +96,15 @@ export type ImageQuality = 'low' | 'medium' | 'high'
 export type ImageStreaming = 'enabled' | 'disabled'
 
 // Add image models - gpt-4o supports image generation with Responses API
+// Using internal ID to distinguish from regular gpt-4o
 export const IMAGE_MODELS = [
-  'gpt-4o'
+  'gpt-4o-images'
 ]
+
+// Map internal image model IDs to actual API model IDs
+export const IMAGE_MODEL_MAP: Record<string, string> = {
+  'gpt-4o-images': 'gpt-4o'
+}
 
 // Modelos que deben ser excluidos de la lista (nunca mostrar)
 export const EXCLUDED_MODELS = [
@@ -284,6 +290,7 @@ interface ChatState {
   isVisionModel: (modelId?: string) => boolean
   isImageModel: (modelId?: string) => boolean
   chatHasImages: (chatId?: string) => boolean
+  getApiModelId: (modelId: string) => string
   
   // NEW: Computed getters for current chat streaming
   getCurrentChatStreaming: () => StreamingSession | null
@@ -1106,6 +1113,7 @@ export const useChatStore = create<ChatState>()(
           sendImageMessage: async (prompt: string) => {
             const apiKey = localStorage.getItem('openai_api_key')
             const model = get().selectedModel
+            const apiModel = get().getApiModelId(model) // Map internal ID to API ID
             const imageQuality = get().imageQuality
             const imageStreaming = get().imageStreaming
             const devMode = get().devMode
@@ -1127,7 +1135,7 @@ export const useChatStore = create<ChatState>()(
             // Debug info for user message
             const userDebugInfo = devMode ? {
               sentToAPI: {
-                model,
+                model: apiModel, // Show the actual API model in debug info
                 prompt,
                 quality: imageQuality,
                 streaming: imageStreaming,
@@ -1142,10 +1150,8 @@ export const useChatStore = create<ChatState>()(
             const chatId = get().currentChatId
             if (!chatId) return
 
-            // Create streaming session for this chat if streaming is enabled
-            if (imageStreaming === 'enabled') {
-              get().createStreamingSession(chatId)
-            }
+            // Create streaming session for this chat (for both streaming and final-only modes)
+            get().createStreamingSession(chatId)
             
             // Add placeholder AI message with progress indicator for streaming
             const placeholderMessage: Message = {
@@ -1173,7 +1179,7 @@ export const useChatStore = create<ChatState>()(
               return {
                 messages: updatedMessages,
                 chats: updatedChats,
-                isLoading: true
+                // Don't set global isLoading, use streaming session instead
               }
             })
 
@@ -1181,9 +1187,8 @@ export const useChatStore = create<ChatState>()(
 
             try {
               const controller = new AbortController()
-              if (imageStreaming === 'enabled') {
-                get().updateStreamingSession(chatId, { abortController: controller })
-              }
+              // Always set the abort controller for both streaming and final-only modes
+              get().updateStreamingSession(chatId, { abortController: controller })
 
               const response = await fetch('/api/image-generation', {
                 method: 'POST',
@@ -1193,7 +1198,7 @@ export const useChatStore = create<ChatState>()(
                 body: JSON.stringify({
                   prompt,
                   apiKey,
-                  model,
+                  model: apiModel, // Use the mapped API model ID
                   quality: imageQuality,
                   streaming: imageStreaming,
                 }),
@@ -1219,9 +1224,8 @@ export const useChatStore = create<ChatState>()(
                       isLoading: false
                     }
                   })
-                  if (imageStreaming === 'enabled') {
-                    get().cleanupStreamingSession(chatId)
-                  }
+                  // Always cleanup streaming session on error for both modes
+                  get().cleanupStreamingSession(chatId)
                   return
                 }
                 throw new Error(errorData.error || 'Failed to generate image')
@@ -1230,7 +1234,7 @@ export const useChatStore = create<ChatState>()(
               // Handle streaming response
               if (imageStreaming === 'enabled' && response.body) {
                 get().updateStreamingSession(chatId, { isStreaming: true })
-                set({ isLoading: false })
+                // Don't set global isLoading to false, use streaming session state
                 
                 const reader = response.body.getReader()
                 const decoder = new TextDecoder()
@@ -1366,6 +1370,75 @@ export const useChatStore = create<ChatState>()(
                   throw error
                 }
 
+                // Check if we have image data
+                if (!finalImageData || finalImageData.length === 0) {
+                  console.log('🎬 [IMAGE STREAMING] No image data received, showing informative message')
+                  
+                  // Create content with informative message instead of image
+                  const imageContent: MessageContent[] = [
+                    {
+                      type: 'text',
+                      text: `No image could be generated for: "${prompt}". The model did not return any image.`
+                    }
+                  ]
+
+                  // Debug info for assistant response
+                  const assistantDebugInfo = devMode ? {
+                    receivedFromAPI: {
+                      model,
+                      response: 'No image generated',
+                      timestamp: new Date().toISOString(),
+                      responseTime,
+                    }
+                  } : undefined
+
+                  // Finalize the message with informative text
+                  set(state => {
+                    const finalMessage = {
+                      id: Date.now().toString(),
+                      content: imageContent,
+                      isUser: false,
+                      timestamp: new Date().toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      }),
+                      debugInfo: assistantDebugInfo,
+                    }
+                    
+                    // Update chats array
+                    const updatedChats = state.chats.map(chat => {
+                      if (chat.id === chatId) {
+                        const updatedMessages = chat.messages.map((msg, idx) => {
+                          if (idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                            return finalMessage
+                          }
+                          return msg
+                        })
+                        return { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                      }
+                      return chat
+                    })
+                    
+                    // If this is the current chat, also update the current messages
+                    if (state.currentChatId === chatId) {
+                      const updatedMessages = state.messages.map((msg, idx) => {
+                        if (idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                          return finalMessage
+                        }
+                        return msg
+                      })
+                      return { messages: updatedMessages, chats: updatedChats }
+                    }
+                    
+                    return { chats: updatedChats }
+                  })
+                  
+                  // Clean up streaming session
+                  get().cleanupStreamingSession(chatId)
+                  return
+                }
+
                 // Store image in persistent cache
                 const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
                 
@@ -1390,7 +1463,7 @@ export const useChatStore = create<ChatState>()(
                 // Debug info for assistant response
                 const assistantDebugInfo = devMode ? {
                   receivedFromAPI: {
-                    model,
+                    model: apiModel, // Show the actual API model in debug info
                     response: 'Image generated successfully',
                     timestamp: new Date().toISOString(),
                     responseTime,
@@ -1450,9 +1523,76 @@ export const useChatStore = create<ChatState>()(
                 get().cleanupStreamingSession(chatId)
                 
               } else {
-                // Non-streaming response
+                // Non-streaming response (Final only mode)
                 const imageData = await response.json()
                 const responseTime = Date.now() - startTime
+
+                // Check if we have image data
+                if (!imageData.image || imageData.image.length === 0) {
+                  console.log('🎬 [IMAGE FINAL-ONLY] No image data received, showing informative message')
+                  
+                  // Create content with informative message instead of image
+                  const imageContent: MessageContent[] = [
+                    {
+                      type: 'text',
+                      text: `No image could be generated for: "${prompt}". The model did not return any image.`
+                    }
+                  ]
+
+                  // Debug info for assistant response
+                  const assistantDebugInfo = devMode ? {
+                    receivedFromAPI: {
+                      model: apiModel, // Show the actual API model in debug info
+                      response: 'No image generated',
+                      timestamp: new Date().toISOString(),
+                      responseTime,
+                    }
+                  } : undefined
+
+                  // Update the placeholder message with informative text
+                  set(state => {
+                    const finalMessage = {
+                      id: Date.now().toString(),
+                      content: imageContent,
+                      isUser: false,
+                      timestamp: new Date().toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      }),
+                      debugInfo: assistantDebugInfo,
+                    }
+                    
+                    // Update chats array
+                    const updatedChats = state.chats.map(chat => {
+                      if (chat.id === chatId) {
+                        const updatedMessages = chat.messages.map((msg, idx) => 
+                          idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')
+                            ? finalMessage
+                            : msg
+                        )
+                        return { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                      }
+                      return chat
+                    })
+                    
+                    // If this is the current chat, also update the current messages
+                    if (state.currentChatId === chatId) {
+                      const updatedMessages = state.messages.map((msg, idx) => 
+                        idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')
+                          ? finalMessage
+                          : msg
+                      )
+                      return { messages: updatedMessages, chats: updatedChats }
+                    }
+                    
+                    return { chats: updatedChats }
+                  })
+                  
+                  // Clean up streaming session for final-only mode too
+                  get().cleanupStreamingSession(chatId)
+                  return
+                }
 
                 // Store image in persistent cache
                 const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -1478,7 +1618,7 @@ export const useChatStore = create<ChatState>()(
                 // Debug info for assistant response
                 const assistantDebugInfo = devMode ? {
                   receivedFromAPI: {
-                    model,
+                    model: apiModel, // Show the actual API model in debug info
                     response: 'Image generated successfully',
                     timestamp: new Date().toISOString(),
                     responseTime,
@@ -1524,6 +1664,9 @@ export const useChatStore = create<ChatState>()(
                   
                   return { chats: updatedChats }
                 })
+                
+                // Clean up streaming session for final-only mode too
+                get().cleanupStreamingSession(chatId)
               }
             } catch (error: any) {
               console.error('Image generation error:', error)
@@ -1534,15 +1677,11 @@ export const useChatStore = create<ChatState>()(
                     error: error?.message || 'An error occurred while generating the image',
                   })
                 }
-                if (imageStreaming === 'enabled') {
-                  get().cleanupStreamingSession(chatId)
-                }
+                // Always cleanup streaming session on error for both modes
+                get().cleanupStreamingSession(chatId)
               }
             } finally {
-              // Only clear loading if we're still on the same chat
-              if (get().currentChatId === chatId) {
-                set({ isLoading: false })
-              }
+              // Don't set global isLoading to false, streaming session cleanup handles this
             }
           },
 
@@ -1853,6 +1992,11 @@ export const useChatStore = create<ChatState>()(
           isImageModel: (modelId?: string) => {
             const model = modelId || get().selectedModel
             return IMAGE_MODELS.includes(model)
+          },
+
+          // NEW: Get the actual API model ID from internal ID
+          getApiModelId: (modelId: string) => {
+            return IMAGE_MODEL_MAP[modelId] || modelId
           },
         }
       },

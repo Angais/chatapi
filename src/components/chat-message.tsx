@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Copy, Info, Check, Edit2, X } from 'lucide-react'
+import { Copy, Info, Check, Edit2, X, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Highlight, themes } from 'prism-react-renderer'
 import { useTheme } from '@/hooks/use-theme'
@@ -35,6 +35,64 @@ function StreamingCursor() {
       className="inline-block w-2 h-5 bg-foreground ml-0.5 -mb-1"
     />
   )
+}
+
+// Componente para animar los puntos de carga
+function AnimatedDots() {
+  return (
+    <span className="inline-flex">
+      {[0, 1, 2].map((i) => (
+        <motion.span
+          key={i}
+          animate={{
+            opacity: [0.3, 1, 0.3]
+          }}
+          transition={{
+            duration: 1.4,
+            repeat: Infinity,
+            delay: i * 0.2,
+            ease: "easeInOut"
+          }}
+          className="inline-block"
+        >
+          .
+        </motion.span>
+      ))}
+    </span>
+  )
+}
+
+// Componente para mostrar el estado de generación de imagen
+function ImageGenerationStatus({ content }: { content: string }) {
+  const { imageStreaming } = useChatStore()
+  
+  // Check if it's the starting message
+  if (content === 'Starting image generation...') {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <span>Starting image generation</span>
+        <AnimatedDots />
+      </div>
+    )
+  }
+  
+  // Check if it's an empty message (Final only mode)
+  if (content === '' && imageStreaming === 'disabled') {
+    return (
+      <div className="flex items-center gap-3 text-muted-foreground">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+        >
+          <Loader2 className="h-4 w-4" />
+        </motion.div>
+        <span>Generating image</span>
+        <AnimatedDots />
+      </div>
+    )
+  }
+  
+  return <span>{content}</span>
 }
 
 function CodeBlock({ children, className }: { children: string; className?: string }) {
@@ -207,7 +265,12 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
 
   // Component to handle async image loading from cache
   const CachedImage = ({ url, alt, index }: { url: string; alt: string; index: number }) => {
-    const [imageSrc, setImageSrc] = useState<string>(url)
+    // Initialize with placeholder for cache URLs, actual URL for direct URLs
+    const [imageSrc, setImageSrc] = useState<string>(
+      url.startsWith('cache:') 
+        ? '' // Empty string to prevent initial load attempt
+        : url
+    )
     const [isLoading, setIsLoading] = useState(url.startsWith('cache:'))
     const [showModal, setShowModal] = useState(false)
     const [showDownloadButton, setShowDownloadButton] = useState(false)
@@ -286,18 +349,20 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
             </Button>
           )}
           
-          <img
-            src={imageSrc}
-            alt={alt}
-            className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-            style={{ maxHeight: '300px', opacity: isLoading ? 0 : 1 }}
-            onClick={(e) => {
-              e.stopPropagation()
-              if (!isLoading && imageSrc.startsWith('data:')) {
-                setShowModal(true)
-              }
-            }}
-          />
+          {imageSrc && (
+            <img
+              src={imageSrc}
+              alt={alt}
+              className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+              style={{ maxHeight: '300px', opacity: isLoading ? 0 : 1 }}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!isLoading && imageSrc.startsWith('data:')) {
+                  setShowModal(true)
+                }
+              }}
+            />
+          )}
         </div>
 
         {/* Modal for fullscreen view */}
@@ -396,42 +461,47 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
                           <StreamingCursor />
                         </div>
                       ) : (
-                        // Para mensajes completos, usar ReactMarkdown
+                        // Para mensajes completos, usar ReactMarkdown o mostrar estado de generación de imagen
                         <div className="markdown-content">
-                          <ReactMarkdown
-                            components={{
-                              code: ({ className, children, ...props }) => {
-                                const match = /language-(\w+)/.exec(className || '')
-                                return match ? (
-                                  <CodeBlock className={className}>
-                                    {String(children).replace(/\n$/, '')}
-                                  </CodeBlock>
-                                ) : (
-                                  <code 
-                                    className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-all"
-                                    {...props}
-                                  >
-                                    {children}
-                                  </code>
-                                )
-                              },
-                              pre: ({ children }) => <>{children}</>,
-                              h1: ({ children }) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
-                              h2: ({ children }) => <h2 className="text-lg font-bold mb-2">{children}</h2>,
-                              h3: ({ children }) => <h3 className="text-base font-bold mb-2">{children}</h3>,
-                              ul: ({ children }) => <ul className="list-disc list-inside space-y-1 ml-4">{children}</ul>,
-                              ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 ml-4">{children}</ol>,
-                              li: ({ children }) => <li className="text-base">{children}</li>,
-                              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                              strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-                              em: ({ children }) => <em className="italic">{children}</em>,
-                              blockquote: ({ children }) => (
-                                <blockquote className="border-l-4 border-muted pl-4 italic">{children}</blockquote>
-                              ),
-                            }}
-                          >
-                            {getTextContent(content)}
-                          </ReactMarkdown>
+                          {(getTextContent(content) === 'Starting image generation...' || 
+                            (getTextContent(content) === '' && message?.id.endsWith('_ai_image'))) ? (
+                            <ImageGenerationStatus content={getTextContent(content)} />
+                          ) : (
+                            <ReactMarkdown
+                              components={{
+                                code: ({ className, children, ...props }) => {
+                                  const match = /language-(\w+)/.exec(className || '')
+                                  return match ? (
+                                    <CodeBlock className={className}>
+                                      {String(children).replace(/\n$/, '')}
+                                    </CodeBlock>
+                                  ) : (
+                                    <code 
+                                      className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-all"
+                                      {...props}
+                                    >
+                                      {children}
+                                    </code>
+                                  )
+                                },
+                                pre: ({ children }) => <>{children}</>,
+                                h1: ({ children }) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
+                                h2: ({ children }) => <h2 className="text-lg font-bold mb-2">{children}</h2>,
+                                h3: ({ children }) => <h3 className="text-base font-bold mb-2">{children}</h3>,
+                                ul: ({ children }) => <ul className="list-disc list-inside space-y-1 ml-4">{children}</ul>,
+                                ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 ml-4">{children}</ol>,
+                                li: ({ children }) => <li className="text-base">{children}</li>,
+                                p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                                strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                                em: ({ children }) => <em className="italic">{children}</em>,
+                                blockquote: ({ children }) => (
+                                  <blockquote className="border-l-4 border-muted pl-4 italic">{children}</blockquote>
+                                ),
+                              }}
+                            >
+                              {getTextContent(content)}
+                            </ReactMarkdown>
+                          )}
                         </div>
                       )}
                     </div>
