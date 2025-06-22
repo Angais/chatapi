@@ -86,6 +86,9 @@ export const VISION_MODELS = [
   'gpt-4o-2024-08-06',
   'gpt-4o-2024-05-13',
   'gpt-4o-mini-2024-07-18',
+  'o3',
+  'o3-pro',
+  'o4-mini',
 ]
 
 // Modelos que deben ser excluidos de la lista (nunca mostrar)
