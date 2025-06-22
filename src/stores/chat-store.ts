@@ -1310,14 +1310,14 @@ export const useChatStore = create<ChatState>()(
                             
                             // Update placeholder message with partial image
                             set(state => {
-                              console.log('🎬 [IMAGE STREAMING] Current messages count:', state.messages.length)
-                              const updatedMessages = state.messages.map((msg, idx) => {
-                                if (idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
-                                  console.log('🎬 [IMAGE STREAMING] Updating message with partial image')
-                                  return { ...msg, content: partialImageContent }
-                                }
-                                return msg
-                              })
+                                                  // console.log('🎬 [IMAGE STREAMING] Current messages count:', state.messages.length)
+                    const updatedMessages = state.messages.map((msg, idx) => {
+                      if (idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                        // console.log('🎬 [IMAGE STREAMING] Updating message with partial image')
+                        return { ...msg, content: partialImageContent }
+                      }
+                      return msg
+                    })
                               
                               const updatedChats = state.chats.map(chat => {
                                 if (chat.id === chatId) {

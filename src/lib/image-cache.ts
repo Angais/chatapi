@@ -115,7 +115,7 @@ export const storeImage = async (id: string, base64Data: string): Promise<void> 
   try {
     const cache = getImageCache()
     await cache.setImage(id, base64Data)
-    console.log(`💾 [IMAGE CACHE] Stored image ${id}`)
+    // console.log(`💾 [IMAGE CACHE] Stored image ${id}`) // Commented to reduce verbosity
   } catch (error) {
     console.error('💾 [IMAGE CACHE] Failed to store image:', error)
     // Fallback to memory cache
@@ -134,7 +134,7 @@ export const retrieveImage = async (id: string): Promise<string | null> => {
     const cache = getImageCache()
     const data = await cache.getImage(id)
     if (data) {
-      console.log(`💾 [IMAGE CACHE] Retrieved image ${id}`)
+      // console.log(`💾 [IMAGE CACHE] Retrieved image ${id}`) // Commented to reduce verbosity
       return data
     }
   } catch (error) {
@@ -145,7 +145,7 @@ export const retrieveImage = async (id: string): Promise<string | null> => {
   if (typeof window !== 'undefined') {
     const globalThis = window as any
     if (globalThis.imageCache && globalThis.imageCache.has(id)) {
-      console.log(`🧠 [MEMORY CACHE] Retrieved image ${id}`)
+      // console.log(`🧠 [MEMORY CACHE] Retrieved image ${id}`) // Commented to reduce verbosity
       return globalThis.imageCache.get(id)
     }
   }

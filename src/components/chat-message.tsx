@@ -7,10 +7,12 @@ import { Highlight, themes } from 'prism-react-renderer'
 import { useTheme } from '@/hooks/use-theme'
 import { useChatStore, MessageContent } from '@/stores/chat-store'
 import { DevInfoModal } from '@/components/dev-info-modal'
+import { ImageModal } from '@/components/image-modal'
 import ReactMarkdown from 'react-markdown'
 import { useEffect, useState } from 'react'
 import { Message } from '@/stores/chat-store'
 import { retrieveImage } from '@/lib/image-cache'
+import { Download } from 'lucide-react'
 
 interface ChatMessageProps {
   content: string | MessageContent[]
@@ -207,6 +209,9 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
   const CachedImage = ({ url, alt, index }: { url: string; alt: string; index: number }) => {
     const [imageSrc, setImageSrc] = useState<string>(url)
     const [isLoading, setIsLoading] = useState(url.startsWith('cache:'))
+    const [showModal, setShowModal] = useState(false)
+    const [showDownloadButton, setShowDownloadButton] = useState(false)
+    const [isDownloading, setIsDownloading] = useState(false)
 
     useEffect(() => {
       if (url.startsWith('cache:')) {
@@ -231,26 +236,78 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
       }
     }, [url])
 
+    const handleDownload = async (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (!imageSrc.startsWith('data:')) return
+      
+      setIsDownloading(true)
+      try {
+        const link = document.createElement('a')
+        link.href = imageSrc
+        link.download = `generated-image-${Date.now()}.png`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      } catch (error) {
+        console.error('Failed to download image:', error)
+      } finally {
+        setIsDownloading(false)
+      }
+    }
+
+    // Only show download button when image is fully loaded and not loading
+    const canDownload = !isLoading && imageSrc.startsWith('data:')
+
     return (
-      <div className="relative">
-        {isLoading && (
-          <div className="absolute inset-0 bg-muted animate-pulse rounded-lg flex items-center justify-center">
-            <div className="text-sm text-muted-foreground">Loading...</div>
-          </div>
-        )}
-        <img
-          src={imageSrc}
-          alt={alt}
-          className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-          style={{ maxHeight: '300px', opacity: isLoading ? 0 : 1 }}
-          onClick={(e) => {
-            e.stopPropagation()
-            if (!isLoading && imageSrc.startsWith('data:')) {
-              window.open(imageSrc, '_blank')
-            }
-          }}
+      <>
+        <div 
+          className="relative group"
+          onMouseEnter={() => setShowDownloadButton(true)}
+          onMouseLeave={() => setShowDownloadButton(false)}
+        >
+          {isLoading && (
+            <div className="absolute inset-0 bg-muted animate-pulse rounded-lg flex items-center justify-center">
+              <div className="text-sm text-muted-foreground">Loading...</div>
+            </div>
+          )}
+          
+          {/* Download button for small image */}
+          {canDownload && (
+            <Button
+              variant="secondary"
+              size="icon"
+              className={`absolute top-2 right-2 z-10 bg-black/50 hover:bg-black/70 text-white border-none transition-opacity duration-200 ${
+                showDownloadButton ? 'opacity-100' : 'opacity-0'
+              }`}
+              onClick={handleDownload}
+              disabled={isDownloading}
+            >
+              <Download className={`h-3 w-3 ${isDownloading ? 'animate-pulse' : ''}`} />
+            </Button>
+          )}
+          
+          <img
+            src={imageSrc}
+            alt={alt}
+            className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+            style={{ maxHeight: '300px', opacity: isLoading ? 0 : 1 }}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (!isLoading && imageSrc.startsWith('data:')) {
+                setShowModal(true)
+              }
+            }}
+          />
+        </div>
+
+        {/* Modal for fullscreen view */}
+        <ImageModal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          imageSrc={imageSrc}
+          imageAlt={alt}
         />
-      </div>
+      </>
     )
   }
 
