@@ -179,6 +179,7 @@ interface StreamingSession {
   isStreaming: boolean
   streamingMessage: string
   abortController: AbortController | null
+  placeholderId?: string // For image generation placeholders
 }
 
 // Voice options for Realtime API
@@ -1194,12 +1195,19 @@ export const useChatStore = create<ChatState>()(
             const chatId = get().currentChatId
             if (!chatId) return
 
+                                      // Create unique placeholder ID for this specific image generation
+            const placeholderTimestamp = Date.now()
+            const placeholderId = `${placeholderTimestamp}_ai_image_${Math.random().toString(36).substr(2, 9)}`
+            
             // Create streaming session for this chat (for both streaming and final-only modes)
             get().createStreamingSession(chatId)
             
+            // Store the placeholder ID in the streaming session
+            get().updateStreamingSession(chatId, { placeholderId })
+            
             // Add placeholder AI message with progress indicator for streaming
             const placeholderMessage: Message = {
-              id: Date.now().toString() + '_ai_image',
+              id: placeholderId,
               content: imageStreaming === 'enabled' ? 'Starting image generation...' : '',
               isUser: false,
               timestamp: new Date().toLocaleTimeString('en-US', {
@@ -1488,12 +1496,22 @@ export const useChatStore = create<ChatState>()(
                             
                             // Update placeholder message with partial image (optimized to avoid reloads)
                             set(state => {
-                              // Find the placeholder message ID first
-                              const placeholderIndex = state.messages.findIndex(msg => 
-                                !msg.isUser && msg.id.endsWith('_ai_image')
-                              )
+                              // Get the specific placeholder ID for this image generation
+                              const currentSession = state.streamingSessions.get(chatId)
+                              const targetPlaceholderId = currentSession?.placeholderId
                               
-                              if (placeholderIndex === -1) return state // No placeholder found
+                              if (!targetPlaceholderId) {
+                                console.warn('🎬 [IMAGE STREAMING] No placeholder ID found in session')
+                                return state
+                              }
+                              
+                              // Find the specific placeholder message by its unique ID
+                              const placeholderIndex = state.messages.findIndex(msg => msg.id === targetPlaceholderId)
+                              
+                              if (placeholderIndex === -1) {
+                                console.warn('🎬 [IMAGE STREAMING] Placeholder message not found:', targetPlaceholderId)
+                                return state
+                              }
                               
                               // Only update the specific message, don't recreate arrays
                               const updatedMessages = [...state.messages]
@@ -1508,9 +1526,7 @@ export const useChatStore = create<ChatState>()(
                                 const updatedChats = state.chats.map(chat => {
                                   if (chat.id === chatId) {
                                     const chatMessages = [...chat.messages]
-                                    const chatPlaceholderIndex = chatMessages.findIndex(msg => 
-                                      !msg.isUser && msg.id.endsWith('_ai_image')
-                                    )
+                                    const chatPlaceholderIndex = chatMessages.findIndex(msg => msg.id === targetPlaceholderId)
                                     if (chatPlaceholderIndex !== -1) {
                                       chatMessages[chatPlaceholderIndex] = { 
                                         ...chatMessages[chatPlaceholderIndex], 
@@ -1557,8 +1573,17 @@ export const useChatStore = create<ChatState>()(
                               
                               // Replace placeholder message with final image and save image generation ID
                               set(state => {
-                                const updatedMessages = state.messages.map((msg, idx) => {
-                                  if (idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                                // Get the specific placeholder ID for this image generation
+                                const currentSession = state.streamingSessions.get(chatId)
+                                const targetPlaceholderId = currentSession?.placeholderId
+                                
+                                if (!targetPlaceholderId) {
+                                  console.warn('🎬 [IMAGE STREAMING] No placeholder ID found in session for final image')
+                                  return state
+                                }
+                                
+                                const updatedMessages = state.messages.map(msg => {
+                                  if (msg.id === targetPlaceholderId) {
                                     return { 
                                       ...msg, 
                                       content: finalImageContent,
@@ -1570,8 +1595,8 @@ export const useChatStore = create<ChatState>()(
                                 
                                 const updatedChats = state.chats.map(chat => {
                                   if (chat.id === chatId) {
-                                    const chatMessages = chat.messages.map((msg, idx) => {
-                                      if (idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                                    const chatMessages = chat.messages.map(msg => {
+                                      if (msg.id === targetPlaceholderId) {
                                         return { 
                                           ...msg, 
                                           content: finalImageContent,
