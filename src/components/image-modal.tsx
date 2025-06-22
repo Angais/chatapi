@@ -68,15 +68,23 @@ export function ImageModal({ isOpen, onClose, imageSrc, imageAlt, originalUrl, c
             onClick={(e) => e.stopPropagation()}
           >
             {/* Image container with buttons */}
-            <div className="relative">
-              {/* Action buttons */}
-              <div className="absolute top-2 right-2 z-10 flex gap-2">
+            <div className="relative flex items-center justify-center" style={{ minWidth: '300px', minHeight: '200px' }}>
+              {/* Action buttons - positioned based on minimum area for small images */}
+              <div 
+                className="absolute z-10 flex gap-2"
+                style={{
+                  top: '12px',
+                  right: '12px',
+                  // Ensure buttons are always positioned correctly even for very small images
+                  minWidth: 'fit-content'
+                }}
+              >
                 {/* Edit button */}
                 {chatInputRef && (
                   <Button
                     variant="secondary"
                     size="icon"
-                    className="bg-black/50 hover:bg-black/70 text-white border-none"
+                    className="bg-black/70 hover:bg-black/90 text-white border-none shadow-lg"
                     onClick={handleEdit}
                     title="Edit image"
                   >
@@ -88,7 +96,7 @@ export function ImageModal({ isOpen, onClose, imageSrc, imageAlt, originalUrl, c
                 <Button
                   variant="secondary"
                   size="icon"
-                  className="bg-black/50 hover:bg-black/70 text-white border-none"
+                  className="bg-black/70 hover:bg-black/90 text-white border-none shadow-lg"
                   onClick={handleDownload}
                   disabled={isDownloading || !imageSrc.startsWith('data:')}
                   title="Download image"
@@ -100,7 +108,7 @@ export function ImageModal({ isOpen, onClose, imageSrc, imageAlt, originalUrl, c
                 <Button
                   variant="secondary"
                   size="icon"
-                  className="bg-black/50 hover:bg-black/70 text-white border-none"
+                  className="bg-black/70 hover:bg-black/90 text-white border-none shadow-lg"
                   onClick={onClose}
                   title="Close"
                 >
@@ -112,8 +120,15 @@ export function ImageModal({ isOpen, onClose, imageSrc, imageAlt, originalUrl, c
               <img
                 src={imageSrc}
                 alt={imageAlt}
-                className="max-w-full max-h-full w-auto h-auto object-contain rounded-lg shadow-2xl"
-                style={{ maxWidth: 'calc(100vw - 2rem)', maxHeight: 'calc(80vh - 2rem)' }}
+                className="rounded-lg shadow-2xl object-contain"
+                style={{ 
+                  maxWidth: 'calc(100vw - 2rem)', 
+                  maxHeight: 'calc(80vh - 2rem)',
+                  minWidth: '300px',
+                  minHeight: '200px',
+                  width: 'auto',
+                  height: 'auto'
+                }}
               />
             </div>
           </motion.div>

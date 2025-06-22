@@ -337,27 +337,45 @@ export function ChatMessage({ content, isUser, message, isStreaming = false, cha
     return (
       <>
         <div 
-          className="relative group"
+          className="relative group inline-block"
+          style={{ 
+            minWidth: '150px', 
+            minHeight: '100px' 
+          }}
           onMouseEnter={() => setShowDownloadButton(true)}
           onMouseLeave={() => setShowDownloadButton(false)}
         >
           {isLoading && (
-            <div className="absolute inset-0 bg-muted animate-pulse rounded-lg flex items-center justify-center">
+            <div 
+              className="absolute inset-0 bg-muted animate-pulse rounded-lg flex items-center justify-center"
+              style={{ 
+                minWidth: '150px', 
+                minHeight: '100px' 
+              }}
+            >
               <div className="text-sm text-muted-foreground">Loading...</div>
             </div>
           )}
           
-          {/* Action buttons for small image */}
+          {/* Action buttons - positioned based on minimum area, not actual image size */}
           {canDownload && (
-            <div className={`absolute top-2 right-2 z-10 flex gap-1 transition-opacity duration-200 ${
-              showDownloadButton ? 'opacity-100' : 'opacity-0'
-            }`}>
+            <div 
+              className={`absolute z-10 flex gap-1 transition-opacity duration-200 ${
+                showDownloadButton ? 'opacity-100' : 'opacity-0'
+              }`}
+              style={{
+                top: '8px',
+                right: '8px',
+                // Ensure buttons are always visible even for very small images
+                minWidth: 'fit-content'
+              }}
+            >
               {/* Edit button */}
               {chatInputRef && (
                 <Button
                   variant="secondary"
                   size="icon"
-                  className="bg-black/50 hover:bg-black/70 text-white border-none h-8 w-8"
+                  className="bg-black/70 hover:bg-black/90 text-white border-none h-8 w-8 shadow-lg"
                   onClick={handleEdit}
                   title="Edit image"
                 >
@@ -369,7 +387,7 @@ export function ChatMessage({ content, isUser, message, isStreaming = false, cha
               <Button
                 variant="secondary"
                 size="icon"
-                className="bg-black/50 hover:bg-black/70 text-white border-none h-8 w-8"
+                className="bg-black/70 hover:bg-black/90 text-white border-none h-8 w-8 shadow-lg"
                 onClick={handleDownload}
                 disabled={isDownloading}
                 title="Download image"
@@ -383,8 +401,15 @@ export function ChatMessage({ content, isUser, message, isStreaming = false, cha
             <img
               src={imageSrc}
               alt={alt}
-              className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-              style={{ maxHeight: '300px', opacity: isLoading ? 0 : 1 }}
+              className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+              style={{ 
+                maxHeight: '300px', 
+                minWidth: '150px',
+                minHeight: '100px',
+                maxWidth: '100%',
+                objectFit: 'contain',
+                opacity: isLoading ? 0 : 1 
+              }}
               onClick={(e) => {
                 e.stopPropagation()
                 if (!isLoading && imageSrc.startsWith('data:')) {
