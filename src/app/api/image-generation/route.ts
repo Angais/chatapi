@@ -125,11 +125,20 @@ export async function POST(request: NextRequest) {
 
             for await (const event of responseStream) {
               console.log('🎬 [API] Received event type:', event.type)
+              console.log('🎬 [API] Full event object:', JSON.stringify(event, null, 2))
               
               // Cast to any to avoid TypeScript issues with new API types
               const eventAny = event as any
               
-              if (eventAny.type === "response.image_generation_call.partial_image") {
+              if (eventAny.type === "response.image_generation_call.created") {
+                console.log('🎬 [API] Image generation call created')
+                // Capture the image generation ID from the call creation
+                if (eventAny.id && !imageGenerationId) {
+                  imageGenerationId = eventAny.id
+                  console.log('🎬 [API] Captured image generation ID from call creation:', imageGenerationId)
+                }
+                
+              } else if (eventAny.type === "response.image_generation_call.partial_image") {
                 const partialIndex = eventAny.partial_image_index
                 const imageBase64 = eventAny.partial_image_b64
                 const progress = Math.round(((partialIndex + 1) / 3) * 100) // Assuming 3 total steps
