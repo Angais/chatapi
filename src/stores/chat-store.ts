@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { retrieveImage } from '@/lib/image-cache'
 import { storeImage, cleanupOldImages } from '@/lib/image-cache'
 import { devtools } from 'zustand/middleware'
+import { createIndexedDBPersist } from '@/lib/indexeddb-persist'
 
 export interface MessageContent {
   type: 'text' | 'image_url'
@@ -271,7 +272,7 @@ interface ChatState {
   setUnsupportedModelError: (error: string | null) => void
   clearMessages: () => void
   sendMessage: (content: string, images?: Array<{ url: string; file: File }>) => Promise<void>
-  sendImageMessage: (prompt: string, images?: Array<{ url: string; file: File }>) => Promise<void>
+  sendImageMessage: (prompt: string, images?: Array<{ url: string; file: File; cacheUrl?: string }>) => Promise<void>
   fetchModels: () => Promise<void>
   
   // Chat history actions
@@ -357,7 +358,7 @@ const debounce = <T extends (...args: any[]) => any>(
 
 export const useChatStore = create<ChatState>()(
   devtools(
-    persist(
+    createIndexedDBPersist(
       (set, get) => {
         // Create a debounced function to update chat history
         const debouncedUpdateChatHistory = debounce((chatId: string, messages: Message[]) => {
@@ -1127,7 +1128,7 @@ export const useChatStore = create<ChatState>()(
             }
           },
 
-          sendImageMessage: async (prompt: string, images?: Array<{ url: string; file: File }>) => {
+          sendImageMessage: async (prompt: string, images?: Array<{ url: string; file: File; cacheUrl?: string }>) => {
             const apiKey = localStorage.getItem('openai_api_key')
             const model = get().selectedModel
             const apiModel = get().getApiModelId(model) // Map internal ID to API ID
@@ -1162,16 +1163,47 @@ export const useChatStore = create<ChatState>()(
             // Add uploaded images to message content
             if (images && images.length > 0) {
               console.log('🎬 [IMAGE GENERATION] Adding', images.length, 'uploaded images to user message')
-              images.forEach((image, index) => {
-                console.log(`🎬 [IMAGE GENERATION] Adding image ${index + 1}:`, image.url.substring(0, 50) + '...')
+              
+              // Process images and resolve cache URLs
+              for (let index = 0; index < images.length; index++) {
+                const image = images[index] as any // Type assertion for cacheUrl
+                let imageUrl = image.url
+                
+                // Check if this image has a cache URL (from edit function)
+                if (image.cacheUrl && image.cacheUrl.startsWith('cache:')) {
+                  console.log(`🎬 [IMAGE GENERATION] Using cache reference for image ${index + 1}:`, image.cacheUrl)
+                  const cacheId = image.cacheUrl.substring(6) // Remove 'cache:' prefix
+                  const cachedData = await retrieveImage(cacheId)
+                  if (cachedData) {
+                    imageUrl = `data:image/png;base64,${cachedData}`
+                    console.log(`🎬 [IMAGE GENERATION] Resolved cache image ${index + 1} to data URL`)
+                  } else {
+                    console.warn(`🎬 [IMAGE GENERATION] Failed to resolve cache image ${index + 1}:`, image.cacheUrl)
+                    continue // Skip this image if we can't resolve it
+                  }
+                } else if (image.url.startsWith('cache:')) {
+                  console.log(`🎬 [IMAGE GENERATION] Resolving cache image ${index + 1}:`, image.url)
+                  const cacheId = image.url.substring(6) // Remove 'cache:' prefix
+                  const cachedData = await retrieveImage(cacheId)
+                  if (cachedData) {
+                    imageUrl = `data:image/png;base64,${cachedData}`
+                    console.log(`🎬 [IMAGE GENERATION] Resolved cache image ${index + 1} to data URL`)
+                  } else {
+                    console.warn(`🎬 [IMAGE GENERATION] Failed to resolve cache image ${index + 1}:`, image.url)
+                    continue // Skip this image if we can't resolve it
+                  }
+                } else {
+                  console.log(`🎬 [IMAGE GENERATION] Adding direct image ${index + 1}:`, image.url.substring(0, 50) + '...')
+                }
+                
                 messageContent.push({
                   type: 'image_url',
                   image_url: {
-                    url: image.url,
+                    url: imageUrl,
                     detail: 'high'
                   }
                 })
-              })
+              }
             }
 
             // Debug info for user message
@@ -1270,21 +1302,32 @@ export const useChatStore = create<ChatState>()(
                   // Convert content format for API compatibility
                   let apiContent: any = msg.content
                   if (Array.isArray(msg.content)) {
-                    apiContent = msg.content.map(item => {
+                    // FILTRAR imágenes anteriores - los modelos de generación NO deben verlas
+                    const filteredContent = msg.content.filter(item => {
+                      if (item.type === 'image_url') {
+                        console.log(`🎬 [IMAGE GENERATION] ❌ FILTERING OUT uploaded image from message ${i + 1} - image models should NOT see previous uploaded images`)
+                        return false // Eliminar imágenes subidas del contexto
+                      }
+                      return true // Mantener contenido de texto
+                    })
+                    
+                    console.log(`🎬 [IMAGE GENERATION] Message ${i + 1} content filtered: ${msg.content.length} -> ${filteredContent.length} items`)
+                    
+                    if (filteredContent.length === 0) {
+                      console.log(`🎬 [IMAGE GENERATION] ⚠️ Message ${i + 1} has NO text content after filtering, SKIPPING entirely`)
+                      continue // Saltar mensajes sin contenido de texto
+                    }
+                    
+                    apiContent = filteredContent.map(item => {
                       if (item.type === 'text') {
-                        // Convert 'text' to 'input_text' for API compatibility
+                        // Convert 'text' to appropriate type based on role
+                        console.log(`🎬 [IMAGE GENERATION] ✅ Converting text item in message ${i + 1} (${msg.isUser ? 'user' : 'assistant'}):`, (item.text || '').slice(0, 100))
                         return {
-                          type: 'input_text',
+                          type: msg.isUser ? 'input_text' : 'output_text',
                           text: item.text
                         }
-                      } else if (item.type === 'image_url') {
-                        // Convert image_url to input_image for API compatibility
-                        console.log(`🎬 [IMAGE GENERATION] Converting image_url to input_image:`, { url: item.image_url?.url?.slice(0, 50) + '...' })
-                        return {
-                          type: 'input_image',
-                          image_url: item.image_url?.url
-                        }
                       }
+                      console.log(`🎬 [IMAGE GENERATION] ⚠️ Unknown item type in message ${i + 1}:`, item.type)
                       return item
                     })
                   } else if (!msg.isUser && msg.imageGenerationId) {
@@ -1295,15 +1338,15 @@ export const useChatStore = create<ChatState>()(
                       id: msg.imageGenerationId
                     }
                   } else if (typeof msg.content === 'string') {
-                    // String message (user or assistant text)
+                    // String message - use appropriate type based on role
                     apiContent = [{
-                      type: 'input_text',
+                      type: msg.isUser ? 'input_text' : 'output_text',
                       text: msg.content
                     }]
                   } else {
                     // Fallback for other content types
                     apiContent = [{
-                      type: 'input_text',
+                      type: msg.isUser ? 'input_text' : 'output_text',
                       text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
                     }]
                   }
@@ -1325,29 +1368,50 @@ export const useChatStore = create<ChatState>()(
               }
 
               // Convert current user message content for API compatibility
+              console.log('🎬 [IMAGE GENERATION] 📝 PROCESSING CURRENT USER MESSAGE:')
+              console.log('🎬 [IMAGE GENERATION] Current userContent type:', typeof userContent)
+              console.log('🎬 [IMAGE GENERATION] Current userContent isArray:', Array.isArray(userContent))
+              if (Array.isArray(userContent)) {
+                console.log('🎬 [IMAGE GENERATION] Current userContent items:', userContent.map((item, idx) => ({
+                  index: idx,
+                  type: item.type,
+                  hasText: !!item.text,
+                  hasImageUrl: !!item.image_url?.url,
+                  textPreview: item.text ? item.text.slice(0, 50) : 'N/A',
+                  imageUrlPreview: item.image_url?.url ? item.image_url.url.slice(0, 50) + '...' : 'N/A'
+                })))
+              }
+              
               let apiUserContent: any = userContent
               if (Array.isArray(userContent)) {
-                apiUserContent = userContent.map(item => {
+                console.log('🎬 [IMAGE GENERATION] 🔄 Converting array userContent...')
+                apiUserContent = userContent.map((item, idx) => {
                   if (item.type === 'text') {
+                    console.log(`🎬 [IMAGE GENERATION] ✅ Converting text item ${idx}:`, (item.text || '').slice(0, 50))
                     return {
                       type: 'input_text',
                       text: item.text
                     }
                   } else if (item.type === 'image_url') {
+                    console.log(`🎬 [IMAGE GENERATION] ✅ Converting image_url item ${idx}:`, item.image_url?.url?.slice(0, 50) + '...')
                     return {
                       type: 'input_image',
                       image_url: item.image_url?.url
                     }
                   }
+                  console.log(`🎬 [IMAGE GENERATION] ⚠️ Unknown item type ${idx}:`, item.type)
                   return item
                 })
               } else if (typeof userContent === 'string') {
+                console.log('🎬 [IMAGE GENERATION] 🔄 Converting string userContent:', userContent.slice(0, 50))
                 // Convert string to proper format
                 apiUserContent = [{
                   type: 'input_text',
                   text: userContent
                 }]
               }
+              
+              console.log('🎬 [IMAGE GENERATION] 📤 Final apiUserContent:', apiUserContent)
 
               // Add current user message
               messagesForAPI.push({
@@ -1355,8 +1419,25 @@ export const useChatStore = create<ChatState>()(
                 content: apiUserContent
               })
               
+              console.log('🎬 [IMAGE GENERATION] 🚀 FINAL API STRUCTURE:')
               console.log('🎬 [IMAGE GENERATION] Final API messages count:', messagesForAPI.length)
               console.log('🎬 [IMAGE GENERATION] Current user message content type:', Array.isArray(apiUserContent) ? `array with ${apiUserContent.length} items` : 'string')
+              
+              // LOG SÚPER DETALLADO de cada mensaje
+              messagesForAPI.forEach((msg, i) => {
+                console.log(`🎬 [IMAGE GENERATION] 📋 Message ${i}:`)
+                console.log(`  - Role: ${msg.role || 'N/A'}`)
+                console.log(`  - Content type: ${Array.isArray(msg.content) ? 'array' : typeof msg.content}`)
+                if (Array.isArray(msg.content)) {
+                  console.log(`  - Content items: ${msg.content.length}`)
+                  msg.content.forEach((item: any, idx: number) => {
+                    console.log(`    [${idx}] Type: ${item.type}, Text: ${item.text ? (item.text.slice(0, 30) + '...') : 'N/A'}, ImageUrl: ${item.image_url ? 'YES' : 'NO'}`)
+                  })
+                } else {
+                  console.log(`  - Content: ${JSON.stringify(msg.content).slice(0, 100)}...`)
+                }
+              })
+              
               console.log('🎬 [IMAGE GENERATION] Complete API messages structure:', messagesForAPI.map((msg, i) => ({
                 index: i,
                 role: msg.role,
@@ -2333,7 +2414,7 @@ export const useChatStore = create<ChatState>()(
         }
       },
       {
-        name: 'chat-storage',
+        name: 'chat-storage-idb',
         partialize: (state) => ({
           chats: state.chats,
           currentChatId: state.currentChatId,
@@ -2353,48 +2434,6 @@ export const useChatStore = create<ChatState>()(
           transcriptionModel: state.transcriptionModel,
           transcriptionLanguage: state.transcriptionLanguage,
         }),
-        version: 5,
-        migrate: (persistedState: any, version: number) => {
-          if (version < 2) {
-            if (persistedState && persistedState.chats) {
-              persistedState.chats = persistedState.chats.map((chat: any) => ({
-                ...chat,
-                model: 'gpt-4o-mini',
-                reasoningEffort: 'no-reasoning',
-              }))
-            }
-            if (persistedState) {
-              persistedState.reasoningEffort = 'no-reasoning'
-            }
-          }
-          if (version < 3) {
-            if (persistedState) {
-              persistedState.devMode = false
-            }
-          }
-          if (version < 4) {
-            if (persistedState) {
-              persistedState.voiceMode = 'none'
-              if (persistedState.chats) {
-                persistedState.chats = persistedState.chats.map((chat: any) => ({
-                  ...chat,
-                  voiceMode: 'none',
-                }))
-              }
-            }
-          }
-          if (version < 5) {
-            if (persistedState) {
-              if (persistedState.chats) {
-                persistedState.chats = persistedState.chats.map((chat: any) => ({
-                  ...chat,
-                  isVoiceSessionEnded: false,
-                }))
-              }
-            }
-          }
-          return persistedState
-        },
       }
     ),
     { name: 'chat-store' }

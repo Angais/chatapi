@@ -104,6 +104,35 @@ export async function POST(request: NextRequest) {
               }
             }
 
+            // LOG SÚPER DETALLADO del input que se envía a OpenAI
+            console.log('🎬 [API] 🚀 DETAILED INPUT TO OPENAI:')
+            console.log('🎬 [API] Model:', selectedModel)
+            console.log('🎬 [API] Input type:', Array.isArray(apiInput) ? 'array' : typeof apiInput)
+            if (Array.isArray(apiInput)) {
+              console.log('🎬 [API] Input array length:', apiInput.length)
+              apiInput.forEach((msg: any, i: number) => {
+                console.log(`🎬 [API] 📋 Input Message ${i}:`)
+                console.log(`  - Role: ${msg.role || 'N/A'}`)
+                console.log(`  - Content type: ${Array.isArray(msg.content) ? 'array' : typeof msg.content}`)
+                if (Array.isArray(msg.content)) {
+                  console.log(`  - Content items: ${msg.content.length}`)
+                  msg.content.forEach((item: any, idx: number) => {
+                    console.log(`    [${idx}] Type: ${item.type}, Text: ${item.text ? (item.text.slice(0, 30) + '...') : 'N/A'}, ImageUrl: ${item.image_url ? 'YES' : 'NO'}`)
+                  })
+                } else {
+                  console.log(`  - Content: ${JSON.stringify(msg.content).slice(0, 100)}...`)
+                }
+              })
+            } else {
+              console.log('🎬 [API] Input content:', typeof apiInput === 'string' ? apiInput.slice(0, 100) : JSON.stringify(apiInput).slice(0, 100))
+            }
+            console.log('🎬 [API] Tools:', JSON.stringify([{ 
+              type: "image_generation",
+              partial_images: 2,
+              quality: imageQuality,
+              size: imageSize !== 'auto' ? imageSize : undefined,
+            }]))
+
             // Use Responses API for real streaming with multi-turn support
             const responseStream = await openai.responses.create({
               model: selectedModel,

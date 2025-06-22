@@ -10,13 +10,14 @@ import { useVoiceChat } from '@/hooks/use-voice-chat'
 export interface ChatInputRef {
   focus: () => void
   addText: (text: string) => void
+  addImage: (imageUrl: string, filename?: string) => void
 }
 
-export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref) => {
+export const ChatInput = forwardRef<ChatInputRef, object>((_, ref) => {
   ChatInput.displayName = 'ChatInput'
   const [message, setMessage] = useState('')
   const [previousMessage, setPreviousMessage] = useState('')
-  const [images, setImages] = useState<Array<{ url: string; file: File }>>([])
+  const [images, setImages] = useState<Array<{ url: string; file: File; cacheUrl?: string }>>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const connectionRef = useRef<boolean>(false) // Track connection state
@@ -51,6 +52,59 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
       setTimeout(() => {
         textareaRef.current?.focus()
       }, 0)
+    },
+    addImage: (imageUrl: string, filename?: string) => {
+      // Check if it's a cache URL (from generated images)
+      if (imageUrl.startsWith('cache:')) {
+        // For cache URLs, we need to resolve the actual image data for preview
+        // but we'll keep the cache reference for sending
+        const cacheId = imageUrl.substring(6) // Remove 'cache:' prefix
+        
+        import('@/lib/image-cache').then(({ retrieveImage }) => {
+          retrieveImage(cacheId)
+            .then(base64Data => {
+              if (base64Data) {
+                const dataUrl = `data:image/png;base64,${base64Data}`
+                const placeholderBlob = new Blob([''], { type: 'image/png' })
+                const file = new File([placeholderBlob], filename || `edited-image-${Date.now()}.png`, { type: 'image/png' })
+                
+                // Store both the display URL (for preview) and cache URL (for sending)
+                const imageData = { 
+                  url: dataUrl, // For preview display
+                  file,
+                  cacheUrl: imageUrl // Keep original cache URL for sending
+                }
+                
+                // Clear existing images and add the resolved image
+                setImages([imageData])
+                
+                // Focus the textarea
+                setTimeout(() => {
+                  textareaRef.current?.focus()
+                }, 0)
+              }
+            })
+            .catch(error => {
+              console.error('Failed to resolve cache image:', error)
+            })
+        })
+      } else {
+        // For data URLs, convert to File object (this is for pasted/uploaded images)
+        fetch(imageUrl)
+          .then(res => res.blob())
+          .then(blob => {
+            const file = new File([blob], filename || `edited-image-${Date.now()}.png`, { type: 'image/png' })
+            // Clear existing images and add the new one
+            setImages([{ url: imageUrl, file }])
+            // Focus the textarea
+            setTimeout(() => {
+              textareaRef.current?.focus()
+            }, 0)
+          })
+          .catch(error => {
+            console.error('Failed to convert image URL to file:', error)
+          })
+      }
     }
   }), [])
 

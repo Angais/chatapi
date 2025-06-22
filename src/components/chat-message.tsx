@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Copy, Info, Check, Edit2, X, Loader2 } from 'lucide-react'
+import { Copy, Info, Check, Edit2, X, Loader2, Edit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Highlight, themes } from 'prism-react-renderer'
 import { useTheme } from '@/hooks/use-theme'
@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react'
 import { Message } from '@/stores/chat-store'
 import { retrieveImage } from '@/lib/image-cache'
 import { Download } from 'lucide-react'
+import { ChatInputRef } from '@/components/chat-input'
 
 interface ChatMessageProps {
   content: string | MessageContent[]
@@ -20,6 +21,7 @@ interface ChatMessageProps {
   timestamp?: string
   message?: Message
   isStreaming?: boolean
+  chatInputRef?: React.RefObject<ChatInputRef | null>
 }
 
 // Componente para el cursor parpadeante
@@ -241,7 +243,7 @@ function CopyButton({
   )
 }
 
-export function ChatMessage({ content, isUser, message, isStreaming = false }: ChatMessageProps) {
+export function ChatMessage({ content, isUser, message, isStreaming = false, chatInputRef }: ChatMessageProps) {
   const [showCopyButton, setShowCopyButton] = useState(false)
   const [showDevModal, setShowDevModal] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -318,6 +320,17 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
       }
     }
 
+    const handleEdit = (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (!imageSrc.startsWith('data:') || !chatInputRef?.current) return
+      
+      // Use original cache URL if available, otherwise use the data URL
+      const urlToUse = url.startsWith('cache:') ? url : imageSrc
+      
+      // Add image to chat input for editing
+      chatInputRef.current.addImage(urlToUse, `edited-image-${Date.now()}.png`)
+    }
+
     // Only show download button when image is fully loaded and not loading
     const canDownload = !isLoading && imageSrc.startsWith('data:')
 
@@ -334,19 +347,36 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
             </div>
           )}
           
-          {/* Download button for small image */}
+          {/* Action buttons for small image */}
           {canDownload && (
-            <Button
-              variant="secondary"
-              size="icon"
-              className={`absolute top-2 right-2 z-10 bg-black/50 hover:bg-black/70 text-white border-none transition-opacity duration-200 ${
-                showDownloadButton ? 'opacity-100' : 'opacity-0'
-              }`}
-              onClick={handleDownload}
-              disabled={isDownloading}
-            >
-              <Download className={`h-3 w-3 ${isDownloading ? 'animate-pulse' : ''}`} />
-            </Button>
+            <div className={`absolute top-2 right-2 z-10 flex gap-1 transition-opacity duration-200 ${
+              showDownloadButton ? 'opacity-100' : 'opacity-0'
+            }`}>
+              {/* Edit button */}
+              {chatInputRef && (
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="bg-black/50 hover:bg-black/70 text-white border-none h-8 w-8"
+                  onClick={handleEdit}
+                  title="Edit image"
+                >
+                  <Edit className="h-3 w-3" />
+                </Button>
+              )}
+              
+              {/* Download button */}
+              <Button
+                variant="secondary"
+                size="icon"
+                className="bg-black/50 hover:bg-black/70 text-white border-none h-8 w-8"
+                onClick={handleDownload}
+                disabled={isDownloading}
+                title="Download image"
+              >
+                <Download className={`h-3 w-3 ${isDownloading ? 'animate-pulse' : ''}`} />
+              </Button>
+            </div>
           )}
           
           {imageSrc && (
@@ -371,6 +401,8 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
           onClose={() => setShowModal(false)}
           imageSrc={imageSrc}
           imageAlt={alt}
+          originalUrl={url}
+          chatInputRef={chatInputRef}
         />
       </>
     )

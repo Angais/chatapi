@@ -2,17 +2,20 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Download } from 'lucide-react'
+import { X, Download, Edit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ChatInputRef } from '@/components/chat-input'
 
 interface ImageModalProps {
   isOpen: boolean
   onClose: () => void
   imageSrc: string
   imageAlt: string
+  originalUrl?: string // For cache URLs
+  chatInputRef?: React.RefObject<ChatInputRef | null>
 }
 
-export function ImageModal({ isOpen, onClose, imageSrc, imageAlt }: ImageModalProps) {
+export function ImageModal({ isOpen, onClose, imageSrc, imageAlt, originalUrl, chatInputRef }: ImageModalProps) {
   const [isDownloading, setIsDownloading] = useState(false)
 
   const handleDownload = async () => {
@@ -32,6 +35,18 @@ export function ImageModal({ isOpen, onClose, imageSrc, imageAlt }: ImageModalPr
     } finally {
       setIsDownloading(false)
     }
+  }
+
+  const handleEdit = () => {
+    if (!imageSrc.startsWith('data:') || !chatInputRef?.current) return
+    
+    // Use original cache URL if available, otherwise use the data URL
+    const urlToUse = originalUrl && originalUrl.startsWith('cache:') ? originalUrl : imageSrc
+    
+    // Add image to chat input for editing
+    chatInputRef.current.addImage(urlToUse, `edited-image-${Date.now()}.png`)
+    // Close the modal after adding the image
+    onClose()
   }
 
   return (
@@ -54,26 +69,44 @@ export function ImageModal({ isOpen, onClose, imageSrc, imageAlt }: ImageModalPr
           >
             {/* Image container with buttons */}
             <div className="relative">
-              {/* Close button */}
-              <Button
-                variant="secondary"
-                size="icon"
-                className="absolute top-2 right-2 z-10 bg-black/50 hover:bg-black/70 text-white border-none"
-                onClick={onClose}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-
-              {/* Download button */}
-              <Button
-                variant="secondary"
-                size="icon"
-                className="absolute top-2 right-14 z-10 bg-black/50 hover:bg-black/70 text-white border-none"
-                onClick={handleDownload}
-                disabled={isDownloading || !imageSrc.startsWith('data:')}
-              >
-                <Download className={`h-4 w-4 ${isDownloading ? 'animate-pulse' : ''}`} />
-              </Button>
+              {/* Action buttons */}
+              <div className="absolute top-2 right-2 z-10 flex gap-2">
+                {/* Edit button */}
+                {chatInputRef && (
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    className="bg-black/50 hover:bg-black/70 text-white border-none"
+                    onClick={handleEdit}
+                    title="Edit image"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                )}
+                
+                {/* Download button */}
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="bg-black/50 hover:bg-black/70 text-white border-none"
+                  onClick={handleDownload}
+                  disabled={isDownloading || !imageSrc.startsWith('data:')}
+                  title="Download image"
+                >
+                  <Download className={`h-4 w-4 ${isDownloading ? 'animate-pulse' : ''}`} />
+                </Button>
+                
+                {/* Close button */}
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="bg-black/50 hover:bg-black/70 text-white border-none"
+                  onClick={onClose}
+                  title="Close"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
 
               {/* Image */}
               <img
