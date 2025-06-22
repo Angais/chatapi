@@ -3,7 +3,7 @@ import OpenAI from 'openai'
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, apiKey, model, quality, streaming } = await request.json()
+    const { prompt, apiKey, model, quality, streaming, aspectRatio, messages, inputImages } = await request.json()
 
     if (!apiKey) {
       return NextResponse.json(
@@ -26,8 +26,30 @@ export async function POST(request: NextRequest) {
     const selectedModel = model || 'gpt-4o'
     const imageQuality = quality || 'medium'
     const isStreaming = streaming === 'enabled'
+    const imageAspectRatio = aspectRatio || 'square'
 
-    console.log('🎬 [API] Starting image generation:', { selectedModel, imageQuality, isStreaming })
+    // Map aspect ratio to actual size
+    const getSizeFromAspectRatio = (ratio: string) => {
+      switch (ratio) {
+        case 'square': return '1024x1024'
+        case 'portrait': return '1024x1536'
+        case 'landscape': return '1536x1024'
+        case 'auto': return 'auto'
+        default: return '1024x1024'
+      }
+    }
+
+    const imageSize = getSizeFromAspectRatio(imageAspectRatio)
+
+    console.log('🎬 [API] Starting image generation:', { 
+      selectedModel, 
+      imageQuality, 
+      isStreaming, 
+      imageAspectRatio, 
+      imageSize,
+      hasInputImages: !!(inputImages && inputImages.length > 0),
+      hasMultiTurnContext: !!(messages && messages.length > 1)
+    })
 
     // For streaming image generation using Responses API
     if (isStreaming) {
@@ -38,18 +60,68 @@ export async function POST(request: NextRequest) {
           try {
             console.log('🎬 [API] Creating responses stream...')
             
-            // Use Responses API for real streaming
+            // Prepare input for Responses API - use full conversation context if available
+            let apiInput: any = messages && messages.length > 0 ? messages : prompt
+
+            // If we have input images, we need to format the input properly for image editing
+            if (inputImages && inputImages.length > 0) {
+              // Convert messages format to include input images
+              if (Array.isArray(apiInput)) {
+                // Find the last user message and add images to it
+                const lastUserMessageIndex = apiInput.findLastIndex((msg: any) => msg.role === 'user')
+                if (lastUserMessageIndex !== -1) {
+                  const lastUserMessage = apiInput[lastUserMessageIndex]
+                  
+                  // Ensure content is an array
+                  if (typeof lastUserMessage.content === 'string') {
+                    lastUserMessage.content = [
+                      { type: 'input_text', text: lastUserMessage.content }
+                    ]
+                  }
+                  
+                  // Add input images
+                  inputImages.forEach((imageUrl: string) => {
+                    lastUserMessage.content.push({
+                      type: 'input_image',
+                      image_url: imageUrl
+                    })
+                  })
+                }
+              } else {
+                // Single prompt with images
+                apiInput = [
+                  {
+                    role: 'user',
+                    content: [
+                      { type: 'input_text', text: prompt },
+                      ...inputImages.map((imageUrl: string) => ({
+                        type: 'input_image',
+                        image_url: imageUrl
+                      }))
+                    ]
+                  }
+                ]
+              }
+            }
+
+            // Use Responses API for real streaming with multi-turn support
             const responseStream = await openai.responses.create({
               model: selectedModel,
-              input: prompt,
+              input: apiInput,
               stream: true,
               tools: [{ 
-                type: "image_generation", 
-                partial_images: 2 // Get 2 partial images during generation
+                type: "image_generation",
+                partial_images: 2, // Get 2 partial images during generation
+                quality: imageQuality,
+                size: imageSize !== 'auto' ? imageSize : undefined,
               }],
             })
 
             console.log('🎬 [API] Response stream created, processing events...')
+
+            let lastPartialImage = ''
+            let finalImageSent = false
+            let imageGenerationId = ''
 
             for await (const event of responseStream) {
               console.log('🎬 [API] Received event type:', event.type)
@@ -64,11 +136,21 @@ export async function POST(request: NextRequest) {
                 
                 console.log(`🎬 [API] Partial image ${partialIndex} received, progress: ${progress}%`)
                 
+                // Store the latest image as potential final image
+                lastPartialImage = imageBase64
+                
+                // Capture the image generation ID from the call
+                if (eventAny.id && !imageGenerationId) {
+                  imageGenerationId = eventAny.id
+                  console.log('🎬 [API] Captured image generation ID:', imageGenerationId)
+                }
+                
                 const partialData = {
                   type: 'partial_image',
                   image: imageBase64,
                   progress: progress,
-                  partial_index: partialIndex
+                  partial_index: partialIndex,
+                  imageGenerationId: imageGenerationId
                 }
                 
                 const partialDataStr = `data: ${JSON.stringify(partialData)}\n\n`
@@ -77,18 +159,26 @@ export async function POST(request: NextRequest) {
               } else if (eventAny.type === "response.image_generation_call.result") {
                 console.log('🎬 [API] Final image result received')
                 
+                // Capture the image generation ID from the result
+                if (eventAny.id && !imageGenerationId) {
+                  imageGenerationId = eventAny.id
+                  console.log('🎬 [API] Captured image generation ID from result:', imageGenerationId)
+                }
+                
                 // Get the final image from the result
-                const finalImageBase64 = eventAny.result?.image_b64 || ''
+                const finalImageBase64 = eventAny.result?.image_b64 || lastPartialImage
                 
                 if (finalImageBase64) {
                   const finalData = {
                     type: 'complete',
                     image: finalImageBase64,
-                    progress: 100
+                    progress: 100,
+                    imageGenerationId: imageGenerationId
                   }
                   
                   const finalDataStr = `data: ${JSON.stringify(finalData)}\n\n`
                   controller.enqueue(encoder.encode(finalDataStr))
+                  finalImageSent = true
                 }
                 
               } else if (eventAny.type === "error") {
@@ -102,6 +192,20 @@ export async function POST(request: NextRequest) {
                 const errorDataStr = `data: ${JSON.stringify(errorData)}\n\n`
                 controller.enqueue(encoder.encode(errorDataStr))
               }
+            }
+
+            // If we never received a result event but have partial images, send the last one as final
+            if (!finalImageSent && lastPartialImage) {
+              console.log('🎬 [API] No result event received, sending last partial image as final')
+              const finalData = {
+                type: 'complete',
+                image: lastPartialImage,
+                progress: 100,
+                imageGenerationId: imageGenerationId
+              }
+              
+              const finalDataStr = `data: ${JSON.stringify(finalData)}\n\n`
+              controller.enqueue(encoder.encode(finalDataStr))
             }
 
             console.log('🎬 [API] Stream completed')
@@ -133,26 +237,81 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Non-streaming image generation using regular Images API
+    // Non-streaming image generation using Responses API for consistency
     try {
-      console.log('🎬 [API] Non-streaming generation with Images API')
+      console.log('🎬 [API] Non-streaming generation with Responses API')
       
-      const baseParams: any = {
-        model: 'dall-e-3', // Use DALL-E for non-streaming
-        prompt: prompt,
-        size: "1024x1024",
-        quality: imageQuality === 'low' ? 'standard' : 'hd',
-        response_format: "b64_json"
+      // Prepare input for Responses API - use full conversation context if available
+      let apiInput: any = messages && messages.length > 0 ? messages : prompt
+
+      // If we have input images, we need to format the input properly for image editing
+      if (inputImages && inputImages.length > 0) {
+        // Convert messages format to include input images
+        if (Array.isArray(apiInput)) {
+          // Find the last user message and add images to it
+          const lastUserMessageIndex = apiInput.findLastIndex((msg: any) => msg.role === 'user')
+          if (lastUserMessageIndex !== -1) {
+            const lastUserMessage = apiInput[lastUserMessageIndex]
+            
+            // Ensure content is an array
+            if (typeof lastUserMessage.content === 'string') {
+              lastUserMessage.content = [
+                { type: 'input_text', text: lastUserMessage.content }
+              ]
+            }
+            
+            // Add input images
+            inputImages.forEach((imageUrl: string) => {
+              lastUserMessage.content.push({
+                type: 'input_image',
+                image_url: imageUrl
+              })
+            })
+          }
+        } else {
+          // Single prompt with images
+          apiInput = [
+            {
+              role: 'user',
+              content: [
+                { type: 'input_text', text: prompt },
+                ...inputImages.map((imageUrl: string) => ({
+                  type: 'input_image',
+                  image_url: imageUrl
+                }))
+              ]
+            }
+          ]
+        }
       }
 
-      const imageResponse = await openai.images.generate(baseParams)
-      const imageB64 = imageResponse.data?.[0]?.b64_json || ''
+      const response = await openai.responses.create({
+        model: selectedModel,
+        input: apiInput,
+        tools: [{ 
+          type: "image_generation",
+          quality: imageQuality,
+          size: imageSize !== 'auto' ? imageSize : undefined,
+        }],
+      })
+
+      // Extract image and ID from response
+      const imageGenerationCalls = response.output
+        .filter((output: any) => output.type === "image_generation_call")
+
+      const imageB64 = imageGenerationCalls.length > 0 ? (imageGenerationCalls[0] as any).result : ''
+      const imageGenerationId = imageGenerationCalls.length > 0 ? (imageGenerationCalls[0] as any).id : ''
+
+      console.log('🎬 [API] Non-streaming image generation ID:', imageGenerationId)
 
       return NextResponse.json({
         image: imageB64,
+        imageGenerationId: imageGenerationId,
         prompt: prompt,
-        model: 'dall-e-3',
+        model: selectedModel,
         quality: imageQuality,
+        aspectRatio: imageAspectRatio,
+        size: imageSize,
       })
       
     } catch (imageError: any) {

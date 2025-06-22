@@ -102,8 +102,8 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
     const items = e.clipboardData?.items
     if (!items) return
 
-    // Check if the model supports vision
-    if (!isVisionModel() || isRealtimeModel()) return
+    // Check if the model supports vision or image generation
+    if ((!isVisionModel() && !isImageModel()) || isRealtimeModel()) return
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
@@ -137,7 +137,7 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
       // Check if it's an image generation model
       if (isImageModel() && messageToSend) {
         // Use image generation for image models
-        await sendImageMessage(messageToSend)
+        await sendImageMessage(messageToSend, imagesToSend)
         setPreviousMessage('')
         return
       }
@@ -245,8 +245,8 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
               className="hidden"
             />
 
-            {/* Image upload button - only show for vision models, not image generation models */}
-            {isVisionModel() && !isRealtimeModel() && !isImageModel() && (
+            {/* Image upload button - show for vision models or image generation models, but not realtime */}
+            {(isVisionModel() || isImageModel()) && !isRealtimeModel() && (
               <Button
                 type="button"
                 size="icon"
@@ -323,8 +323,8 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
             ) : (
               <>
                 Press Enter to send, Shift + Enter for new line
-                {isVisionModel() && !isRealtimeModel() && !isImageModel() && " • Paste images with Ctrl/Cmd + V"}
-                {isImageModel() && " • Describe the image you want to generate"}
+                {(isVisionModel() || isImageModel()) && !isRealtimeModel() && " • Paste images with Ctrl/Cmd + V"}
+                {isImageModel() && " • Upload reference images or describe the image you want to generate"}
               </>
             )}
           </motion.p>

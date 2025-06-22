@@ -14,6 +14,7 @@ import { Loader2, ChevronDown, ChevronRight, Mic, AlertCircle, Image } from 'luc
 import { ReasoningEffortSelector } from './reasoning-effort-selector'
 import { ImageQualitySelector } from './image-quality-selector'
 import { ImageStreamingSelector } from './image-streaming-selector'
+import { ImageAspectRatioSelector } from './image-aspect-ratio-selector'
 import { cn } from '@/lib/utils'
 import {
   Tooltip,
@@ -546,6 +547,7 @@ export function ModelSelector() {
       <ReasoningEffortSelector />
       <ImageQualitySelector />
       <ImageStreamingSelector />
+      <ImageAspectRatioSelector />
     </div>
   )
 } 
