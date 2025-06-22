@@ -391,9 +391,13 @@ export const useChatStore = create<ChatState>()(
     
               if (currentChatId) {
                 const currentChat = chats.find(c => c.id === currentChatId)
-                if (currentChat && currentChat.model) {
+                if (currentChat) {
                   modelToSet = currentChat.model
                   reasoningEffortToSet = currentChat.reasoningEffort || get().getDefaultReasoningEffort(modelToSet)
+                  set({ messages: currentChat.messages })
+                } else {
+                  // Invalid currentChatId found in storage, reset it
+                  set({ currentChatId: null, messages: [] })
                 }
               } else {
                 reasoningEffortToSet = get().getDefaultReasoningEffort(modelToSet)
@@ -1369,7 +1373,6 @@ export const useChatStore = create<ChatState>()(
         partialize: (state) => ({
           chats: state.chats,
           currentChatId: state.currentChatId,
-          messages: state.messages,
           reasoningEffort: state.reasoningEffort,
           voiceMode: state.voiceMode,
           devMode: state.devMode,
