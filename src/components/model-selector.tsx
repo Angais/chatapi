@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/select'
 import * as SelectPrimitive from '@radix-ui/react-select'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, ChevronDown, ChevronRight, Mic, AlertCircle, Image } from 'lucide-react'
+import { ChevronDown, ChevronRight, Mic, AlertCircle, Image, Loader2 } from 'lucide-react'
 import { ReasoningEffortSelector } from './reasoning-effort-selector'
 import { ImageQualitySelector } from './image-quality-selector'
 import { ImageStreamingSelector } from './image-streaming-selector'

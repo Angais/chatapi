@@ -39,8 +39,8 @@ export class RealtimeAPIService {
       const model = this.config.model || 'gpt-4o-realtime-preview'
       console.log('🚀 Starting connection to Realtime API with model:', model)
       
-      // Get voice from chat store
-      const { voice } = useChatStore.getState()
+      // Use voice from config (passed in by caller)
+      const voice = this.config.voice || 'alloy'
       console.log('🎤 Using voice:', voice)
       
       // Create ephemeral session for security
@@ -53,7 +53,7 @@ export class RealtimeAPIService {
         },
         body: JSON.stringify({
           model,
-          voice: voice || 'alloy', // Use voice from store
+          voice, // Use voice provided in config
         }),
       })
 
@@ -113,7 +113,7 @@ export class RealtimeAPIService {
           rejectOnce(new Error('Connection timeout after 10 seconds'))
         }, 10000)
 
-        this.setupEventHandlers(resolveOnce, rejectOnce)
+        this.setupEventHandlers(resolveOnce, rejectOnce, voice)
         
         const voiceMode = useChatStore.getState().voiceMode
         if (voiceMode === 'voice-to-voice') {
@@ -130,7 +130,7 @@ export class RealtimeAPIService {
     }
   }
 
-  private setupEventHandlers(resolve: () => void, reject: (error: any) => void) {
+  private setupEventHandlers(resolve: () => void, reject: (error: any) => void, voice: string) {
     if (!this.ws) return
 
     this.ws.onopen = () => {
@@ -194,7 +194,7 @@ export class RealtimeAPIService {
         type: 'session.update',
         session: {
           modalities: ['text', 'audio'],
-          voice: state.voice || 'alloy',
+          voice,
           instructions: instructions,
           input_audio_format: 'pcm16',
           output_audio_format: 'pcm16',
@@ -288,7 +288,9 @@ export class RealtimeAPIService {
       this.isConnected = false
       this.config.onConnectionChange?.(false)
       this.cleanup()
-      reject(new Error('Disconnected from Realtime API'))
+      if (this.isConnected) { // Only reject if we were expecting to stay connected
+        reject(new Error('Disconnected from Realtime API'))
+      }
     }
   }
 

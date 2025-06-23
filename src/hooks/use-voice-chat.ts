@@ -3,6 +3,10 @@ import { useChatStore } from '@/stores/chat-store'
 import { RealtimeAPIService } from '@/services/realtime-api'
 import { AudioPlayer } from '@/services/audio-player'
 
+const isValidVoice = (voice: string): voice is 'alloy' | 'ash' | 'ballad' | 'coral' | 'echo' | 'sage' | 'shimmer' | 'verse' => {
+  return ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'].includes(voice)
+}
+
 export function useVoiceChat() {
   const [isConnected, setIsConnected] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
@@ -18,37 +22,39 @@ export function useVoiceChat() {
     addMessage,
     isRealtimeModel,
     setUnsupportedModelError,
+    voice,
   } = useChatStore()
 
-  // Initialize services
+  // Initialize/cleanup services whenever voice-chat settings change
   useEffect(() => {
-    if (isRealtimeModel() && voiceMode !== 'none') {
-      // Always create a new audio player instance when entering voice mode
-      console.log('Initializing audio player for voice mode:', voiceMode)
-      audioPlayer.current = new AudioPlayer()
-    } else {
-      // Cleanup when not using voice
-      if (realtimeService.current) {
-        realtimeService.current.disconnect()
-        realtimeService.current = null
-      }
-      if (audioPlayer.current) {
-        audioPlayer.current.cleanup()
-        audioPlayer.current = null
-      }
-      setIsConnected(false)
-      setIsRecording(false)
-      setCurrentTranscript('')
+    // Always tear-down current session so the next one picks up new settings
+    if (realtimeService.current) {
+      realtimeService.current.disconnect()
+      realtimeService.current = null
     }
-    
-    // Cleanup on unmount
+    if (audioPlayer.current) {
+      audioPlayer.current.cleanup()
+      audioPlayer.current = null
+    }
+    setIsConnected(false)
+    setIsRecording(false)
+    setCurrentTranscript('')
+
+    // Re-create a fresh audio player when voice chat is active
+    if (isRealtimeModel() && voiceMode !== 'none') {
+      console.log('Initializing audio player:',
+        { voiceMode, voice })
+      audioPlayer.current = new AudioPlayer()
+    }
+
+    // Extra cleanup on unmount
     return () => {
       if (audioPlayer.current) {
         audioPlayer.current.cleanup()
         audioPlayer.current = null
       }
     }
-  }, [voiceMode, isRealtimeModel])
+  }, [voiceMode, isRealtimeModel, voice])
 
   // Check microphone permission
   const checkPermission = useCallback(async () => {
@@ -74,8 +80,12 @@ export function useVoiceChat() {
     const currentVoiceMode = useChatStore.getState().voiceMode
     const messages = useChatStore.getState().messages
     const systemInstructions = useChatStore.getState().systemInstructions
+    const currentVoice = useChatStore.getState().voice
     
-    console.log('🎯 Connecting to Realtime API...', { voiceMode: currentVoiceMode, selectedModel, messageCount: messages.length })
+    console.log('🎯 Connecting to Realtime API...', { voiceMode: currentVoiceMode, selectedModel, messageCount: messages.length, voice: currentVoice })
+    if (!isValidVoice(currentVoice)) {
+      console.warn('⚠️ Selected voice is invalid, defaulting to alloy')
+    }
 
     if (currentVoiceMode === 'voice-to-voice') {
       const hasAccess = await checkPermission()
@@ -107,7 +117,7 @@ export function useVoiceChat() {
       realtimeService.current = new RealtimeAPIService({
         apiKey,
         model: selectedModel,
-        voice: 'alloy',
+        voice: isValidVoice(currentVoice) ? currentVoice : 'alloy',
         initialMessages: initialMessages.length > 0 ? initialMessages : undefined,
         onConnectionChange: (connected) => {
           console.log('🔄 Connection status changed:', connected)
@@ -139,7 +149,7 @@ export function useVoiceChat() {
       console.error('❌ Failed to connect to Realtime API:', error)
       throw error
     }
-  }, [selectedModel, checkPermission, addMessage])
+  }, [selectedModel, checkPermission, addMessage, voice])
 
   // Send text message for text-to-voice mode
   const sendTextMessage = useCallback((text: string) => {

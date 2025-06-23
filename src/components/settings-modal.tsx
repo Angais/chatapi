@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import * as SelectPrimitive from '@radix-ui/react-select'
-import { Eye, EyeOff, Loader2, Sun, Moon, Monitor, Save, ChevronDown, ChevronRight } from 'lucide-react'
+import { Eye, EyeOff, Save, ChevronRight, Sun, Moon, Monitor } from 'lucide-react'
 import { useChatStore, VOICE_OPTIONS, VAD_TYPES, TRANSCRIPTION_MODELS } from '@/stores/chat-store'
 import { useTheme } from '@/hooks/use-theme'
 import { motion, AnimatePresence } from 'framer-motion'
