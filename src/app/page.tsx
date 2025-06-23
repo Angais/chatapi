@@ -199,6 +199,7 @@ export default function ChatPage() {
                     timestamp={message.timestamp}
                     message={message}
                     isStreaming={shouldShowStreaming}
+                    chatInputRef={chatInputRef}
                   />
                 )
               })}

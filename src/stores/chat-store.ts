@@ -1,6 +1,8 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { retrieveImage } from '@/lib/image-cache'
+import { storeImage, cleanupOldImages } from '@/lib/image-cache'
 import { devtools } from 'zustand/middleware'
+import { createIndexedDBPersist } from '@/lib/indexeddb-persist'
 
 export interface MessageContent {
   type: 'text' | 'image_url'
@@ -16,6 +18,8 @@ export interface Message {
   content: string | MessageContent[]
   isUser: boolean
   timestamp: string
+  // Store image generation ID for multi-turn image editing
+  imageGenerationId?: string
   // Información de depuración para Dev Mode
   debugInfo?: {
     // Para mensajes del usuario (enviados a la API)
@@ -91,6 +95,34 @@ export const VISION_MODELS = [
   'o4-mini',
 ]
 
+// Image quality types for image generation
+export type ImageQuality = 'low' | 'medium' | 'high'
+
+// Image streaming option
+export type ImageStreaming = 'enabled' | 'disabled'
+
+// Image aspect ratio options
+export type ImageAspectRatio = 'square' | 'portrait' | 'landscape' | 'auto'
+
+// Available aspect ratios with their sizes
+export const ASPECT_RATIOS = [
+  { id: 'square' as const, name: 'Square', size: '1024x1024' },
+  { id: 'portrait' as const, name: 'Portrait', size: '1024x1536' },
+  { id: 'landscape' as const, name: 'Landscape', size: '1536x1024' },
+  { id: 'auto' as const, name: 'Auto', size: 'auto' },
+]
+
+// Add image models - gpt-4o supports image generation with Responses API
+// Using internal ID to distinguish from regular gpt-4o
+export const IMAGE_MODELS = [
+  'gpt-4o-images'
+]
+
+// Map internal image model IDs to actual API model IDs
+export const IMAGE_MODEL_MAP: Record<string, string> = {
+  'gpt-4o-images': 'gpt-4o'
+}
+
 // Modelos que deben ser excluidos de la lista (nunca mostrar)
 export const EXCLUDED_MODELS = [
   'codex-mini-latest',
@@ -98,6 +130,7 @@ export const EXCLUDED_MODELS = [
   'gpt-4o-audio-preview-2025-06-03',
   'dall-e-3',
   'dall-e-2',
+  'gpt-image-1', // Keep excluded since we use gpt-4o for images now
   'tts-1-hd',
   'tts-1-1106',
   'tts-1-hd-1106',
@@ -122,7 +155,6 @@ export const EXCLUDED_MODELS = [
   'gpt-4o-transcribe',
   'gpt-4o-mini-transcribe',
   'gpt-4o-mini-tts',
-  'gpt-image-1',
   'tts-1',
   'whisper-1',
   'text-embedding-ada-002',
@@ -152,6 +184,7 @@ interface StreamingSession {
   isStreaming: boolean
   streamingMessage: string
   abortController: AbortController | null
+  placeholderId?: string // For image generation placeholders
 }
 
 // Voice options for Realtime API
@@ -210,6 +243,11 @@ interface ChatState {
   voiceMode: VoiceMode
   isVoiceSessionEnded: boolean
   
+  // NEW: Image generation settings
+  imageQuality: ImageQuality
+  imageStreaming: ImageStreaming
+  imageAspectRatio: ImageAspectRatio
+  
   // NEW: Track streaming sessions per chat
   streamingSessions: Map<string, StreamingSession>
   
@@ -255,6 +293,7 @@ interface ChatState {
   setUnsupportedModelError: (error: string | null) => void
   clearMessages: () => void
   sendMessage: (content: string, images?: Array<{ url: string; file: File }>) => Promise<void>
+  sendImageMessage: (prompt: string, images?: Array<{ url: string; file: File; cacheUrl?: string }>) => Promise<void>
   fetchModels: () => Promise<void>
   
   // Chat history actions
@@ -266,6 +305,11 @@ interface ChatState {
   setReasoningEffort: (effort: ReasoningEffort) => void
   setVoiceMode: (mode: VoiceMode) => void
   setVoiceSessionEnded: (ended: boolean) => void
+  
+  // NEW: Image generation actions
+  setImageQuality: (quality: ImageQuality) => void
+  setImageStreaming: (streaming: ImageStreaming) => void
+  setImageAspectRatio: (aspectRatio: ImageAspectRatio) => void
   
   // Dev Mode actions
   setDevMode: (devMode: boolean) => void
@@ -282,7 +326,9 @@ interface ChatState {
   isReasoningModel: (modelId?: string) => boolean
   isRealtimeModel: (modelId?: string) => boolean
   isVisionModel: (modelId?: string) => boolean
+  isImageModel: (modelId?: string) => boolean
   chatHasImages: (chatId?: string) => boolean
+  getApiModelId: (modelId: string) => string
   
   // NEW: Computed getters for current chat streaming
   getCurrentChatStreaming: () => StreamingSession | null
@@ -338,7 +384,7 @@ const debounce = <T extends (...args: any[]) => any>(
 
 export const useChatStore = create<ChatState>()(
   devtools(
-    persist(
+    createIndexedDBPersist(
       (set, get) => {
         // Create a debounced function to update chat history
         const debouncedUpdateChatHistory = debounce((chatId: string, messages: Message[]) => {
@@ -356,21 +402,31 @@ export const useChatStore = create<ChatState>()(
           currentChatId: null,
           messages: [],
           isLoading: false,
-          isStreaming: false, // DEPRECATED
-          streamingMessage: '', // DEPRECATED
-          abortController: null, // DEPRECATED
+          isStreaming: false,
+          streamingMessage: '',
+          abortController: null,
           error: null,
-          selectedModel: 'gpt-4o-mini',
-          chats: [],
-          models: [],
-          isLoadingModels: false,
-          modelsError: null,
-          reasoningEffort: 'no-reasoning',
+          selectedModel: 'gpt-4o',
+          reasoningEffort: 'medium',
           voiceMode: 'none',
           isVoiceSessionEnded: false,
-          devMode: false,
+          
+          // NEW: Default image generation settings
+          imageQuality: 'medium',
+          imageStreaming: 'enabled',
+          imageAspectRatio: 'square',
+          
+          // NEW: Initialize streaming sessions
+          streamingSessions: new Map(),
+          
+                  chats: [],
+        models: [],
+        isLoadingModels: false,
+        modelsError: null,
+        devMode: false,
           unsupportedModelError: null,
-          streamingSessions: new Map(), // NEW
+          
+          // Settings
           temperature: 0.7,
           maxTokens: 1000,
           voice: 'alloy',
@@ -433,6 +489,9 @@ export const useChatStore = create<ChatState>()(
                 selectedModel: modelToSet,
                 reasoningEffort: reasoningEffortToSet
               })
+              
+              // Cleanup old images on init (older than 7 days)
+              cleanupOldImages().catch(console.error)
             }
           },
 
@@ -1114,6 +1173,972 @@ export const useChatStore = create<ChatState>()(
             }
           },
 
+          sendImageMessage: async (prompt: string, images?: Array<{ url: string; file: File; cacheUrl?: string }>) => {
+            const apiKey = localStorage.getItem('openai_api_key')
+            const model = get().selectedModel
+            const apiModel = get().getApiModelId(model) // Map internal ID to API ID
+            const imageQuality = get().imageQuality
+            const imageStreaming = get().imageStreaming
+            const imageAspectRatio = get().imageAspectRatio
+            const devMode = get().devMode
+            const currentChatMessages = get().messages
+            
+            if (!apiKey) {
+              set({ error: 'Please set your OpenAI API key in settings' })
+              return
+            }
+
+            // Only allow image generation for image models
+            if (!get().isImageModel(model)) {
+              set({ error: 'Current model does not support image generation' })
+              return
+            }
+
+            // Clear previous errors
+            set({ error: null, unsupportedModelError: null })
+
+            // Create message content with text and images
+            const messageContent: MessageContent[] = [
+              {
+                type: 'text',
+                text: prompt,
+              }
+            ]
+
+            // Add uploaded images to message content
+            if (images && images.length > 0) {
+              console.log('🎬 [IMAGE GENERATION] Adding', images.length, 'uploaded images to user message')
+              
+              // Process images and resolve cache URLs
+              for (let index = 0; index < images.length; index++) {
+                const image = images[index] as any // Type assertion for cacheUrl
+                let imageUrl = image.url
+                
+                // Check if this image has a cache URL (from edit function)
+                if (image.cacheUrl && image.cacheUrl.startsWith('cache:')) {
+                  console.log(`🎬 [IMAGE GENERATION] Using cache reference for image ${index + 1}:`, image.cacheUrl)
+                  const cacheId = image.cacheUrl.substring(6) // Remove 'cache:' prefix
+                  const cachedData = await retrieveImage(cacheId)
+                  if (cachedData) {
+                    imageUrl = `data:image/png;base64,${cachedData}`
+                    console.log(`🎬 [IMAGE GENERATION] Resolved cache image ${index + 1} to data URL`)
+                  } else {
+                    console.warn(`🎬 [IMAGE GENERATION] Failed to resolve cache image ${index + 1}:`, image.cacheUrl)
+                    continue // Skip this image if we can't resolve it
+                  }
+                } else if (image.url.startsWith('cache:')) {
+                  console.log(`🎬 [IMAGE GENERATION] Resolving cache image ${index + 1}:`, image.url)
+                  const cacheId = image.url.substring(6) // Remove 'cache:' prefix
+                  const cachedData = await retrieveImage(cacheId)
+                  if (cachedData) {
+                    imageUrl = `data:image/png;base64,${cachedData}`
+                    console.log(`🎬 [IMAGE GENERATION] Resolved cache image ${index + 1} to data URL`)
+                  } else {
+                    console.warn(`🎬 [IMAGE GENERATION] Failed to resolve cache image ${index + 1}:`, image.url)
+                    continue // Skip this image if we can't resolve it
+                  }
+                } else {
+                  console.log(`🎬 [IMAGE GENERATION] Adding direct image ${index + 1}:`, image.url.substring(0, 50) + '...')
+                }
+                
+                messageContent.push({
+                  type: 'image_url',
+                  image_url: {
+                    url: imageUrl,
+                    detail: 'high'
+                  }
+                })
+              }
+            }
+
+            // Debug info for user message
+            const userDebugInfo = devMode ? {
+              sentToAPI: {
+                model: apiModel, // Show the actual API model in debug info
+                prompt,
+                quality: imageQuality,
+                streaming: imageStreaming,
+                aspectRatio: imageAspectRatio,
+                hasImages: !!(images && images.length > 0),
+                timestamp: new Date().toISOString(),
+              }
+            } : undefined
+
+            // Add user message with debug info (use array content if images, otherwise string)
+            const userContent = messageContent.length > 1 ? messageContent : prompt
+            get().addMessage(userContent, true, userDebugInfo)
+            
+            // Get the current chat ID after adding message (in case a new chat was created)
+            const chatId = get().currentChatId
+            if (!chatId) return
+
+                                      // Create unique placeholder ID for this specific image generation
+            const placeholderTimestamp = Date.now()
+            const placeholderId = `${placeholderTimestamp}_ai_image_${Math.random().toString(36).substr(2, 9)}`
+            
+            // Create streaming session for this chat (for both streaming and final-only modes)
+            get().createStreamingSession(chatId)
+            
+            // Store the placeholder ID in the streaming session
+            get().updateStreamingSession(chatId, { placeholderId })
+            
+            // Add placeholder AI message with progress indicator for streaming
+            const placeholderMessage: Message = {
+              id: placeholderId,
+              content: imageStreaming === 'enabled' ? 'Starting image generation...' : '',
+              isUser: false,
+              timestamp: new Date().toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+              }),
+            }
+            
+            // Add placeholder to both current messages AND the chat in history
+            set(state => {
+              const updatedMessages = [...state.messages, placeholderMessage]
+              
+              // Also update the chat in history to include the placeholder
+              const updatedChats = state.chats.map(chat =>
+                chat.id === chatId
+                  ? { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                  : chat
+              )
+              
+              return {
+                messages: updatedMessages,
+                chats: updatedChats,
+                // Don't set global isLoading, use streaming session instead
+              }
+            })
+
+            const startTime = Date.now()
+
+            try {
+              const controller = new AbortController()
+              // Always set the abort controller for both streaming and final-only modes
+              get().updateStreamingSession(chatId, { abortController: controller })
+
+              // Prepare messages for multi-turn (include previous context if available)
+              const messagesForAPI = []
+              
+              // Add previous messages for multi-turn context
+              if (currentChatMessages.length > 1) {
+                console.log('🎬 [IMAGE GENERATION] Adding', currentChatMessages.length - 1, 'previous messages for context')
+                console.log('🎬 [IMAGE GENERATION] Previous messages preview:', currentChatMessages.slice(0, -1).map((m, i) => ({ 
+                  index: i,
+                  isUser: m.isUser, 
+                  contentType: typeof m.content, 
+                  isArray: Array.isArray(m.content),
+                  hasImageUrl: Array.isArray(m.content) && m.content.some(item => item.type === 'image_url'),
+                  preview: typeof m.content === 'string' ? m.content.slice(0, 100) : `[${Array.isArray(m.content) ? m.content.length : 'unknown'} items]`
+                })))
+                
+                // Convert messages to API format, excluding the just-added user message
+                for (let i = 0; i < currentChatMessages.length - 1; i++) {
+                  const msg = currentChatMessages[i]
+                  console.log(`🎬 [IMAGE GENERATION] Processing message ${i + 1}:`, {
+                    isUser: msg.isUser,
+                    contentType: typeof msg.content,
+                    isArray: Array.isArray(msg.content),
+                    content: Array.isArray(msg.content) ? msg.content.map(item => ({ type: item.type, hasUrl: !!item.image_url?.url })) : 'string'
+                  })
+                  
+                  // Convert content format for API compatibility
+                  let apiContent: any = msg.content
+                  if (Array.isArray(msg.content)) {
+                    // FILTRAR imágenes anteriores - los modelos de generación NO deben verlas
+                    const filteredContent = msg.content.filter(item => {
+                      if (item.type === 'image_url') {
+                        console.log(`🎬 [IMAGE GENERATION] ❌ FILTERING OUT uploaded image from message ${i + 1} - image models should NOT see previous uploaded images`)
+                        return false // Eliminar imágenes subidas del contexto
+                      }
+                      return true // Mantener contenido de texto
+                    })
+                    
+                    console.log(`🎬 [IMAGE GENERATION] Message ${i + 1} content filtered: ${msg.content.length} -> ${filteredContent.length} items`)
+                    
+                    if (filteredContent.length === 0) {
+                      console.log(`🎬 [IMAGE GENERATION] ⚠️ Message ${i + 1} has NO text content after filtering, SKIPPING entirely`)
+                      continue // Saltar mensajes sin contenido de texto
+                    }
+                    
+                    apiContent = filteredContent.map(item => {
+                      if (item.type === 'text') {
+                        // Convert 'text' to appropriate type based on role
+                        console.log(`🎬 [IMAGE GENERATION] ✅ Converting text item in message ${i + 1} (${msg.isUser ? 'user' : 'assistant'}):`, (item.text || '').slice(0, 100))
+                        return {
+                          type: msg.isUser ? 'input_text' : 'output_text',
+                          text: item.text
+                        }
+                      }
+                      console.log(`🎬 [IMAGE GENERATION] ⚠️ Unknown item type in message ${i + 1}:`, item.type)
+                      return item
+                    })
+                  } else if (!msg.isUser && msg.imageGenerationId) {
+                    // This is a generated image message - use the image generation ID for multi-turn
+                    console.log(`🎬 [IMAGE GENERATION] Found generated image with ID in assistant message ${i + 1}:`, msg.imageGenerationId)
+                    apiContent = {
+                      type: 'image_generation_call',
+                      id: msg.imageGenerationId
+                    }
+                  } else if (typeof msg.content === 'string') {
+                    // String message - use appropriate type based on role
+                    apiContent = [{
+                      type: msg.isUser ? 'input_text' : 'output_text',
+                      text: msg.content
+                    }]
+                  } else {
+                    // Fallback for other content types
+                    apiContent = [{
+                      type: msg.isUser ? 'input_text' : 'output_text',
+                      text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+                    }]
+                  }
+                  
+                  // Handle image_generation_call differently - it goes directly in the input array
+                  if (!msg.isUser && msg.imageGenerationId) {
+                    // Image generation call goes directly in the input, not wrapped in role/content
+                    messagesForAPI.push(apiContent)
+                    console.log(`🎬 [IMAGE GENERATION] Added image generation call ${i + 1}:`, apiContent)
+                  } else {
+                    // Regular message with role/content structure
+                    messagesForAPI.push({
+                      role: msg.isUser ? 'user' : 'assistant',
+                      content: apiContent
+                    })
+                    console.log(`🎬 [IMAGE GENERATION] Added message ${i + 1}:`, msg.isUser ? 'user' : 'assistant', Array.isArray(apiContent) ? `[${apiContent.length} items]` : typeof apiContent)
+                  }
+                }
+              }
+
+              // Convert current user message content for API compatibility
+              console.log('🎬 [IMAGE GENERATION] 📝 PROCESSING CURRENT USER MESSAGE:')
+              console.log('🎬 [IMAGE GENERATION] Current userContent type:', typeof userContent)
+              console.log('🎬 [IMAGE GENERATION] Current userContent isArray:', Array.isArray(userContent))
+              if (Array.isArray(userContent)) {
+                console.log('🎬 [IMAGE GENERATION] Current userContent items:', userContent.map((item, idx) => ({
+                  index: idx,
+                  type: item.type,
+                  hasText: !!item.text,
+                  hasImageUrl: !!item.image_url?.url,
+                  textPreview: item.text ? item.text.slice(0, 50) : 'N/A',
+                  imageUrlPreview: item.image_url?.url ? item.image_url.url.slice(0, 50) + '...' : 'N/A'
+                })))
+              }
+              
+              let apiUserContent: any = userContent
+              if (Array.isArray(userContent)) {
+                console.log('🎬 [IMAGE GENERATION] 🔄 Converting array userContent...')
+                apiUserContent = userContent.map((item, idx) => {
+                  if (item.type === 'text') {
+                    console.log(`🎬 [IMAGE GENERATION] ✅ Converting text item ${idx}:`, (item.text || '').slice(0, 50))
+                    return {
+                      type: 'input_text',
+                      text: item.text
+                    }
+                  } else if (item.type === 'image_url') {
+                    console.log(`🎬 [IMAGE GENERATION] ✅ Converting image_url item ${idx}:`, item.image_url?.url?.slice(0, 50) + '...')
+                    return {
+                      type: 'input_image',
+                      image_url: item.image_url?.url
+                    }
+                  }
+                  console.log(`🎬 [IMAGE GENERATION] ⚠️ Unknown item type ${idx}:`, item.type)
+                  return item
+                })
+              } else if (typeof userContent === 'string') {
+                console.log('🎬 [IMAGE GENERATION] 🔄 Converting string userContent:', userContent.slice(0, 50))
+                // Convert string to proper format
+                apiUserContent = [{
+                  type: 'input_text',
+                  text: userContent
+                }]
+              }
+              
+              console.log('🎬 [IMAGE GENERATION] 📤 Final apiUserContent:', apiUserContent)
+
+              // Add current user message
+              messagesForAPI.push({
+                role: 'user',
+                content: apiUserContent
+              })
+              
+              console.log('🎬 [IMAGE GENERATION] 🚀 FINAL API STRUCTURE:')
+              console.log('🎬 [IMAGE GENERATION] Final API messages count:', messagesForAPI.length)
+              console.log('🎬 [IMAGE GENERATION] Current user message content type:', Array.isArray(apiUserContent) ? `array with ${apiUserContent.length} items` : 'string')
+              
+              // LOG SÚPER DETALLADO de cada mensaje
+              messagesForAPI.forEach((msg, i) => {
+                console.log(`🎬 [IMAGE GENERATION] 📋 Message ${i}:`)
+                console.log(`  - Role: ${msg.role || 'N/A'}`)
+                console.log(`  - Content type: ${Array.isArray(msg.content) ? 'array' : typeof msg.content}`)
+                if (Array.isArray(msg.content)) {
+                  console.log(`  - Content items: ${msg.content.length}`)
+                  msg.content.forEach((item: any, idx: number) => {
+                    console.log(`    [${idx}] Type: ${item.type}, Text: ${item.text ? (item.text.slice(0, 30) + '...') : 'N/A'}, ImageUrl: ${item.image_url ? 'YES' : 'NO'}`)
+                  })
+                } else {
+                  console.log(`  - Content: ${JSON.stringify(msg.content).slice(0, 100)}...`)
+                }
+              })
+              
+              console.log('🎬 [IMAGE GENERATION] Complete API messages structure:', messagesForAPI.map((msg, i) => ({
+                index: i,
+                role: msg.role,
+                contentItems: Array.isArray(msg.content) ? msg.content.length : 1,
+                contentTypes: Array.isArray(msg.content) ? msg.content.map((c: any) => c.type) : [typeof msg.content]
+              })))
+
+              const response = await fetch('/api/image-generation', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  prompt,
+                  apiKey,
+                  model: apiModel, // Use the mapped API model ID
+                  quality: imageQuality,
+                  streaming: imageStreaming,
+                  aspectRatio: imageAspectRatio,
+                  messages: messagesForAPI, // Send full conversation context
+                  inputImages: images?.map(img => img.url) || [], // Send uploaded images
+                }),
+                signal: controller.signal,
+              })
+
+              if (!response.ok) {
+                const errorData = await response.json()
+                if (errorData.unsupportedModel) {
+                  // Remove the placeholder and user message
+                  set(state => {
+                    const updatedMessages = state.messages.slice(0, -2)
+                    const updatedChats = state.chats.map(chat =>
+                      chat.id === chatId
+                        ? { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                        : chat
+                    )
+                    
+                    return {
+                      messages: state.currentChatId === chatId ? updatedMessages : state.messages,
+                      chats: updatedChats,
+                      unsupportedModelError: errorData.error,
+                      isLoading: false
+                    }
+                  })
+                  // Always cleanup streaming session on error for both modes
+                  get().cleanupStreamingSession(chatId)
+                  return
+                }
+                throw new Error(errorData.error || 'Failed to generate image')
+              }
+
+              // Handle streaming response
+              if (imageStreaming === 'enabled' && response.body) {
+                get().updateStreamingSession(chatId, { isStreaming: true })
+                // Don't set global isLoading to false, use streaming session state
+                
+                const reader = response.body.getReader()
+                const decoder = new TextDecoder()
+                let finalImageData = ''
+                let buffer = '' // Buffer to accumulate incomplete JSON chunks
+                const responseTime = Date.now() - startTime
+                let partialCount = 0
+                let finalMessageProcessed = false
+
+                console.log('🎬 [IMAGE STREAMING] Starting image stream processing...')
+
+                try {
+                  while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) {
+                      console.log('🎬 [IMAGE STREAMING] Stream completed')
+                      break
+                    }
+                    
+                    const chunk = decoder.decode(value, { stream: true })
+                    console.log('🎬 [IMAGE STREAMING] Received chunk length:', chunk.length)
+                    
+                    // Add chunk to buffer
+                    buffer += chunk
+                    
+                    // Process complete lines from buffer
+                    const lines = buffer.split('\n')
+                    
+                    // Keep the last line in buffer in case it's incomplete
+                    buffer = lines.pop() || ''
+                    
+                    for (const line of lines) {
+                      if (line.startsWith('data: ')) {
+                        const data = line.slice(6).trim()
+                        if (data === '[DONE]') {
+                          console.log('🎬 [IMAGE STREAMING] Received [DONE] signal')
+                          break
+                        }
+                        
+                        if (data === '') continue // Skip empty data lines
+                        
+                        try {
+                          console.log('🎬 [IMAGE STREAMING] Parsing JSON data of length:', data.length)
+                          const parsed = JSON.parse(data)
+                          console.log('🎬 [IMAGE STREAMING] Parsed event type:', parsed.type, 'progress:', parsed.progress)
+                          
+                          if (parsed.type === 'partial_image') {
+                            partialCount++
+                            console.log(`🎬 [IMAGE STREAMING] Processing partial image #${partialCount} (${parsed.progress}%)`)
+                            console.log('🎬 [IMAGE STREAMING] Image generation ID from partial:', parsed.imageGenerationId)
+                            
+                            // Always store the latest image as potential final image
+                            finalImageData = parsed.image
+                            console.log('🎬 [IMAGE STREAMING] Updated finalImageData with latest partial image')
+                            
+                            // If progress is 100% or this is the highest progress we've seen, treat as final
+                            if (parsed.progress >= 67) { // 67% is typically the last partial image
+                              console.log('🎬 [IMAGE STREAMING] This appears to be the final image (progress >= 67%)')
+                            }
+                            
+                            // Store partial image in persistent cache
+                            const partialImageId = `partial_img_${Date.now()}_${partialCount}`
+                            // Store in IndexedDB asynchronously (don't block UI)
+                            storeImage(partialImageId, parsed.image).catch(console.error)
+                            
+                            // Show partial image during generation
+                            const partialImageContent: MessageContent[] = [
+                              {
+                                type: 'text',
+                                text: `Generating image... (${parsed.progress}%)`
+                              },
+                              {
+                                type: 'image_url',
+                                image_url: {
+                                  url: `cache:${partialImageId}`,
+                                  detail: 'auto'
+                                }
+                              }
+                            ]
+                            
+                            console.log('🎬 [IMAGE STREAMING] Updating UI with partial image')
+                            
+                            // Update placeholder message with partial image (optimized to avoid reloads)
+                            set(state => {
+                              // Get the specific placeholder ID for this image generation
+                              const currentSession = state.streamingSessions.get(chatId)
+                              const targetPlaceholderId = currentSession?.placeholderId
+                              
+                              if (!targetPlaceholderId) {
+                                console.warn('🎬 [IMAGE STREAMING] No placeholder ID found in session')
+                                return state
+                              }
+                              
+                              // Find the specific placeholder message by its unique ID
+                              const placeholderIndex = state.messages.findIndex(msg => msg.id === targetPlaceholderId)
+                              
+                              if (placeholderIndex === -1) {
+                                console.warn('🎬 [IMAGE STREAMING] Placeholder message not found:', targetPlaceholderId)
+                                return state
+                              }
+                              
+                              // Only update the specific message, don't recreate arrays
+                              const updatedMessages = [...state.messages]
+                              updatedMessages[placeholderIndex] = { 
+                                ...updatedMessages[placeholderIndex], 
+                                content: partialImageContent 
+                              }
+                              
+                              // Only update current chat if this is the current chat
+                              if (state.currentChatId === chatId) {
+                                // Also update in chats array for persistence
+                                const updatedChats = state.chats.map(chat => {
+                                  if (chat.id === chatId) {
+                                    const chatMessages = [...chat.messages]
+                                    const chatPlaceholderIndex = chatMessages.findIndex(msg => msg.id === targetPlaceholderId)
+                                    if (chatPlaceholderIndex !== -1) {
+                                      chatMessages[chatPlaceholderIndex] = { 
+                                        ...chatMessages[chatPlaceholderIndex], 
+                                        content: partialImageContent 
+                                      }
+                                    }
+                                    return { ...chat, messages: chatMessages, updatedAt: new Date().toISOString() }
+                                  }
+                                  return chat
+                                })
+                                
+                                return { messages: updatedMessages, chats: updatedChats }
+                              }
+                              
+                              return state // No changes if not current chat
+                            })
+                          } else if (parsed.type === 'complete') {
+                            console.log('🎬 [IMAGE STREAMING] Received final image, replacing with final message')
+                            console.log('🎬 [IMAGE STREAMING] Image generation ID from complete:', parsed.imageGenerationId)
+                            finalImageData = parsed.image
+                            
+                            // Immediately update with final image to avoid double replacement
+                            if (finalImageData) {
+                              const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+                              
+                              // Store final image in cache
+                              storeImage(imageId, finalImageData).catch(console.error)
+                              
+                              const finalImageContent: MessageContent[] = [
+                                {
+                                  type: 'text',
+                                  text: `Generated image for: "${prompt}"`
+                                },
+                                {
+                                  type: 'image_url',
+                                  image_url: {
+                                    url: `cache:${imageId}`,
+                                    detail: 'auto'
+                                  }
+                                }
+                              ]
+                              
+                              console.log('🎬 [IMAGE STREAMING] Replacing placeholder with final message')
+                              
+                              // Replace placeholder message with final image and save image generation ID
+                              set(state => {
+                                // Get the specific placeholder ID for this image generation
+                                const currentSession = state.streamingSessions.get(chatId)
+                                const targetPlaceholderId = currentSession?.placeholderId
+                                
+                                if (!targetPlaceholderId) {
+                                  console.warn('🎬 [IMAGE STREAMING] No placeholder ID found in session for final image')
+                                  return state
+                                }
+                                
+                                const updatedMessages = state.messages.map(msg => {
+                                  if (msg.id === targetPlaceholderId) {
+                                    return { 
+                                      ...msg, 
+                                      content: finalImageContent,
+                                      imageGenerationId: parsed.imageGenerationId // Store the image generation ID
+                                    }
+                                  }
+                                  return msg
+                                })
+                                
+                                const updatedChats = state.chats.map(chat => {
+                                  if (chat.id === chatId) {
+                                    const chatMessages = chat.messages.map(msg => {
+                                      if (msg.id === targetPlaceholderId) {
+                                        return { 
+                                          ...msg, 
+                                          content: finalImageContent,
+                                          imageGenerationId: parsed.imageGenerationId // Store the image generation ID
+                                        }
+                                      }
+                                      return msg
+                                    })
+                                    return { ...chat, messages: chatMessages, updatedAt: new Date().toISOString() }
+                                  }
+                                  return chat
+                                })
+                                
+                                if (state.currentChatId === chatId) {
+                                  return { messages: updatedMessages, chats: updatedChats }
+                                }
+                                
+                                return { chats: updatedChats }
+                              })
+                              
+                              // Clean up streaming session since we're done
+                              get().cleanupStreamingSession(chatId)
+                              finalMessageProcessed = true
+                              return // Exit early to avoid processing at the end
+                            }
+                          } else if (parsed.type === 'image_generation_id') {
+                            console.log('🎬 [IMAGE STREAMING] Received image generation ID:', parsed.imageGenerationId)
+                            
+                            // Update the final message with the image generation ID
+                            set(state => {
+                              const currentSession = state.streamingSessions.get(chatId)
+                              const targetPlaceholderId = currentSession?.placeholderId
+                              
+                              if (!targetPlaceholderId) {
+                                console.warn('🎬 [IMAGE STREAMING] No placeholder ID found for image generation ID update')
+                                return state
+                              }
+                              
+                              const updatedMessages = state.messages.map(msg => {
+                                if (msg.id === targetPlaceholderId) {
+                                  return { 
+                                    ...msg, 
+                                    imageGenerationId: parsed.imageGenerationId
+                                  }
+                                }
+                                return msg
+                              })
+                              
+                              const updatedChats = state.chats.map(chat => {
+                                if (chat.id === chatId) {
+                                  const chatMessages = chat.messages.map(msg => {
+                                    if (msg.id === targetPlaceholderId) {
+                                      return { 
+                                        ...msg, 
+                                        imageGenerationId: parsed.imageGenerationId
+                                      }
+                                    }
+                                    return msg
+                                  })
+                                  return { ...chat, messages: chatMessages, updatedAt: new Date().toISOString() }
+                                }
+                                return chat
+                              })
+                              
+                              if (state.currentChatId === chatId) {
+                                return { messages: updatedMessages, chats: updatedChats }
+                              }
+                              
+                              return { chats: updatedChats }
+                            })
+                            
+                          } else if (parsed.type === 'error') {
+                            console.error('🎬 [IMAGE STREAMING] Received error:', parsed.error)
+                            throw new Error(parsed.error)
+                          }
+                        } catch (e: any) {
+                          if (e.message.includes('Unexpected end of JSON input') || e.message.includes('Unterminated string')) {
+                            console.log('🎬 [IMAGE STREAMING] JSON chunk incomplete, waiting for more data...')
+                            // Put the incomplete data back in buffer
+                            buffer = 'data: ' + data + '\n' + buffer
+                          } else {
+                            console.error('🎬 [IMAGE STREAMING] JSON parse error:', e.message)
+                            console.error('🎬 [IMAGE STREAMING] Problematic data (first 200 chars):', data.substring(0, 200))
+                          }
+                        }
+                      }
+                    }
+                  }
+                } catch (error: any) {
+                  if (error.name === 'AbortError') {
+                    // Stream was cancelled - stopStreaming() already handled saving
+                    return
+                  }
+                  throw error
+                }
+
+                // Check if we have image data (and haven't already processed the final message)
+                if (finalMessageProcessed) {
+                  console.log('🎬 [IMAGE STREAMING] Final message already processed, skipping end processing')
+                  return
+                }
+                
+                if (!finalImageData || finalImageData.length === 0) {
+                  console.log('🎬 [IMAGE STREAMING] No image data received, showing informative message')
+                  
+                  // Create content with informative message instead of image
+                  const imageContent: MessageContent[] = [
+                    {
+                      type: 'text',
+                      text: `No image could be generated for: "${prompt}". The model did not return any image.`
+                    }
+                  ]
+
+                  // Debug info for assistant response
+                  const assistantDebugInfo = devMode ? {
+                    receivedFromAPI: {
+                      model,
+                      response: 'No image generated',
+                      timestamp: new Date().toISOString(),
+                      responseTime,
+                    }
+                  } : undefined
+
+                  // Finalize the message with informative text
+                  set(state => {
+                    const finalMessage = {
+                      id: Date.now().toString(),
+                      content: imageContent,
+                      isUser: false,
+                      timestamp: new Date().toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      }),
+                      debugInfo: assistantDebugInfo,
+                    }
+                    
+                    // Update chats array
+                    const updatedChats = state.chats.map(chat => {
+                      if (chat.id === chatId) {
+                        const updatedMessages = chat.messages.map((msg, idx) => {
+                          if (idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                            return finalMessage
+                          }
+                          return msg
+                        })
+                        return { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                      }
+                      return chat
+                    })
+                    
+                    // If this is the current chat, also update the current messages
+                    if (state.currentChatId === chatId) {
+                      const updatedMessages = state.messages.map((msg, idx) => {
+                        if (idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                          return finalMessage
+                        }
+                        return msg
+                      })
+                      return { messages: updatedMessages, chats: updatedChats }
+                    }
+                    
+                    return { chats: updatedChats }
+                  })
+                  
+                  // Clean up streaming session
+                  get().cleanupStreamingSession(chatId)
+                  return
+                }
+
+                // Store image in persistent cache
+                const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+                
+                // Store in IndexedDB asynchronously (don't block UI)
+                storeImage(imageId, finalImageData).catch(console.error)
+                
+                // Create image content with reference to cached image
+                const imageContent: MessageContent[] = [
+                  {
+                    type: 'text',
+                    text: `Generated image for: "${prompt}"`
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `cache:${imageId}`, // Reference to cached image
+                      detail: 'auto'
+                    }
+                  }
+                ]
+
+                // Debug info for assistant response
+                const assistantDebugInfo = devMode ? {
+                  receivedFromAPI: {
+                    model: apiModel, // Show the actual API model in debug info
+                    response: 'Image generated successfully',
+                    timestamp: new Date().toISOString(),
+                    responseTime,
+                  }
+                } : undefined
+
+                // Finalize the message with image
+                console.log('🎬 [IMAGE STREAMING] Finalizing message with complete image')
+                console.log('🎬 [IMAGE STREAMING] Final image data length:', finalImageData.length)
+                
+                set(state => {
+                  const finalMessage = {
+                    id: Date.now().toString(),
+                    content: imageContent,
+                    isUser: false,
+                    timestamp: new Date().toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    }),
+                    debugInfo: assistantDebugInfo,
+                  }
+                  
+                  console.log('🎬 [IMAGE STREAMING] Creating final message with content length:', imageContent.length)
+                  
+                  // Update chats array
+                  const updatedChats = state.chats.map(chat => {
+                    if (chat.id === chatId) {
+                      const updatedMessages = chat.messages.map((msg, idx) => {
+                        if (idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                          console.log('🎬 [IMAGE STREAMING] Replacing placeholder with final message')
+                          return finalMessage
+                        }
+                        return msg
+                      })
+                      return { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                    }
+                    return chat
+                  })
+                  
+                  // If this is the current chat, also update the current messages
+                  if (state.currentChatId === chatId) {
+                    const updatedMessages = state.messages.map((msg, idx) => {
+                      if (idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')) {
+                        console.log('🎬 [IMAGE STREAMING] Replacing current message with final message')
+                        return finalMessage
+                      }
+                      return msg
+                    })
+                    return { messages: updatedMessages, chats: updatedChats }
+                  }
+                  
+                  return { chats: updatedChats }
+                })
+                
+                // Clean up streaming session
+                get().cleanupStreamingSession(chatId)
+                
+              } else {
+                // Non-streaming response (Final only mode)
+                const imageData = await response.json()
+                const responseTime = Date.now() - startTime
+
+                // Check if we have image data
+                if (!imageData.image || imageData.image.length === 0) {
+                  console.log('🎬 [IMAGE FINAL-ONLY] No image data received, showing informative message')
+                  
+                  // Create content with informative message instead of image
+                  const imageContent: MessageContent[] = [
+                    {
+                      type: 'text',
+                      text: `No image could be generated for: "${prompt}". The model did not return any image.`
+                    }
+                  ]
+
+                  // Debug info for assistant response
+                  const assistantDebugInfo = devMode ? {
+                    receivedFromAPI: {
+                      model: apiModel, // Show the actual API model in debug info
+                      response: 'No image generated',
+                      timestamp: new Date().toISOString(),
+                      responseTime,
+                    }
+                  } : undefined
+
+                  // Update the placeholder message with informative text
+                  set(state => {
+                    const finalMessage = {
+                      id: Date.now().toString(),
+                      content: imageContent,
+                      isUser: false,
+                      timestamp: new Date().toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      }),
+                      debugInfo: assistantDebugInfo,
+                    }
+                    
+                    // Update chats array
+                    const updatedChats = state.chats.map(chat => {
+                      if (chat.id === chatId) {
+                        const updatedMessages = chat.messages.map((msg, idx) => 
+                          idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')
+                            ? finalMessage
+                            : msg
+                        )
+                        return { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                      }
+                      return chat
+                    })
+                    
+                    // If this is the current chat, also update the current messages
+                    if (state.currentChatId === chatId) {
+                      const updatedMessages = state.messages.map((msg, idx) => 
+                        idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')
+                          ? finalMessage
+                          : msg
+                      )
+                      return { messages: updatedMessages, chats: updatedChats }
+                    }
+                    
+                    return { chats: updatedChats }
+                  })
+                  
+                  // Clean up streaming session for final-only mode too
+                  get().cleanupStreamingSession(chatId)
+                  return
+                }
+
+                // Store image in persistent cache
+                const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+                
+                // Store in IndexedDB asynchronously (don't block UI)
+                storeImage(imageId, imageData.image).catch(console.error)
+                
+                // Create image content
+                const imageContent: MessageContent[] = [
+                  {
+                    type: 'text',
+                    text: `Generated image for: "${prompt}"`
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `cache:${imageId}`,
+                      detail: 'auto'
+                    }
+                  }
+                ]
+
+                // Debug info for assistant response
+                const assistantDebugInfo = devMode ? {
+                  receivedFromAPI: {
+                    model: apiModel, // Show the actual API model in debug info
+                    response: 'Image generated successfully',
+                    timestamp: new Date().toISOString(),
+                    responseTime,
+                  }
+                } : undefined
+
+                // Update the placeholder message with the image
+                set(state => {
+                  const finalMessage = {
+                    id: Date.now().toString(),
+                    content: imageContent,
+                    isUser: false,
+                    timestamp: new Date().toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    }),
+                    debugInfo: assistantDebugInfo,
+                  }
+                  
+                  // Update chats array
+                  const updatedChats = state.chats.map(chat => {
+                    if (chat.id === chatId) {
+                      const updatedMessages = chat.messages.map((msg, idx) => 
+                        idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')
+                          ? finalMessage
+                          : msg
+                      )
+                      return { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                    }
+                    return chat
+                  })
+                  
+                  // If this is the current chat, also update the current messages
+                  if (state.currentChatId === chatId) {
+                    const updatedMessages = state.messages.map((msg, idx) => 
+                      idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai_image')
+                        ? finalMessage
+                        : msg
+                    )
+                    return { messages: updatedMessages, chats: updatedChats }
+                  }
+                  
+                  return { chats: updatedChats }
+                })
+                
+                // Clean up streaming session for final-only mode too
+                get().cleanupStreamingSession(chatId)
+              }
+            } catch (error: any) {
+              console.error('Image generation error:', error)
+              if (error.name !== 'AbortError') {
+                // Only set error if we're still on the same chat
+                if (get().currentChatId === chatId) {
+                  set({ 
+                    error: error?.message || 'An error occurred while generating the image',
+                  })
+                }
+                // Always cleanup streaming session on error for both modes
+                get().cleanupStreamingSession(chatId)
+              }
+            } finally {
+              // Don't set global isLoading to false, streaming session cleanup handles this
+            }
+          },
+
           fetchModels: async () => {
             const apiKey = localStorage.getItem('openai_api_key')
             if (!apiKey) {
@@ -1466,10 +2491,34 @@ export const useChatStore = create<ChatState>()(
             
             return hasUnknownPricing ? -1 : totalCost
           },
+
+          // NEW: Image generation actions
+          setImageQuality: (quality: ImageQuality) => {
+            set({ imageQuality: quality })
+          },
+
+          setImageStreaming: (streaming: ImageStreaming) => {
+            set({ imageStreaming: streaming })
+          },
+
+          setImageAspectRatio: (aspectRatio: ImageAspectRatio) => {
+            set({ imageAspectRatio: aspectRatio })
+          },
+
+          // NEW: Helper to check if model is image generation model
+          isImageModel: (modelId?: string) => {
+            const model = modelId || get().selectedModel
+            return IMAGE_MODELS.includes(model)
+          },
+
+          // NEW: Get the actual API model ID from internal ID
+          getApiModelId: (modelId: string) => {
+            return IMAGE_MODEL_MAP[modelId] || modelId
+          },
         }
       },
       {
-        name: 'chat-storage',
+        name: 'chat-storage-idb',
         partialize: (state) => ({
           chats: state.chats,
           currentChatId: state.currentChatId,

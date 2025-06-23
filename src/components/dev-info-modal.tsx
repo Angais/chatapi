@@ -185,8 +185,8 @@ export function DevInfoModal({ message, open, onOpenChange }: DevInfoModalProps)
           <div className="space-y-3">
             <h3 className="font-semibold text-sm">Message Content</h3>
             <CodeBlock
-              title="Message Text"
-              content={message.content}
+              title="Message Content"
+              content={typeof message.content === 'string' ? message.content : formatJSON(message.content)}
               section="message-content"
             />
           </div>

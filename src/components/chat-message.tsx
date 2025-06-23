@@ -1,15 +1,19 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Copy, Info, Check, Edit2, X } from 'lucide-react'
+import { Copy, Info, Check, Edit2, X, Loader2, Edit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Highlight, themes } from 'prism-react-renderer'
 import { useTheme } from '@/hooks/use-theme'
 import { useChatStore, MessageContent } from '@/stores/chat-store'
 import { DevInfoModal } from '@/components/dev-info-modal'
+import { ImageModal } from '@/components/image-modal'
 import ReactMarkdown from 'react-markdown'
 import { useEffect, useState } from 'react'
 import { Message } from '@/stores/chat-store'
+import { retrieveImage } from '@/lib/image-cache'
+import { Download } from 'lucide-react'
+import { ChatInputRef } from '@/components/chat-input'
 
 interface ChatMessageProps {
   content: string | MessageContent[]
@@ -17,6 +21,7 @@ interface ChatMessageProps {
   timestamp?: string
   message?: Message
   isStreaming?: boolean
+  chatInputRef?: React.RefObject<ChatInputRef | null>
 }
 
 // Componente para el cursor parpadeante
@@ -32,6 +37,64 @@ function StreamingCursor() {
       className="inline-block w-2 h-5 bg-foreground ml-0.5 -mb-1"
     />
   )
+}
+
+// Componente para animar los puntos de carga
+function AnimatedDots() {
+  return (
+    <span className="inline-flex">
+      {[0, 1, 2].map((i) => (
+        <motion.span
+          key={i}
+          animate={{
+            opacity: [0.3, 1, 0.3]
+          }}
+          transition={{
+            duration: 1.4,
+            repeat: Infinity,
+            delay: i * 0.2,
+            ease: "easeInOut"
+          }}
+          className="inline-block"
+        >
+          .
+        </motion.span>
+      ))}
+    </span>
+  )
+}
+
+// Componente para mostrar el estado de generación de imagen
+function ImageGenerationStatus({ content }: { content: string }) {
+  const { imageStreaming } = useChatStore()
+  
+  // Check if it's the starting message
+  if (content === 'Starting image generation...') {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <span>Starting image generation</span>
+        <AnimatedDots />
+      </div>
+    )
+  }
+  
+  // Check if it's an empty message (Final only mode)
+  if (content === '' && imageStreaming === 'disabled') {
+    return (
+      <div className="flex items-center gap-3 text-muted-foreground">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+        >
+          <Loader2 className="h-4 w-4" />
+        </motion.div>
+        <span>Generating image</span>
+        <AnimatedDots />
+      </div>
+    )
+  }
+  
+  return <span>{content}</span>
 }
 
 function CodeBlock({ children, className }: { children: string; className?: string }) {
@@ -180,7 +243,7 @@ function CopyButton({
   )
 }
 
-export function ChatMessage({ content, isUser, message, isStreaming = false }: ChatMessageProps) {
+export function ChatMessage({ content, isUser, message, isStreaming = false, chatInputRef }: ChatMessageProps) {
   const [showCopyButton, setShowCopyButton] = useState(false)
   const [showDevModal, setShowDevModal] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -200,6 +263,174 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
     return content
       .filter(c => c.type === 'image_url' && c.image_url)
       .map(c => c.image_url!.url)
+  }
+
+  // Component to handle async image loading from cache
+  const CachedImage = ({ url, alt, index }: { url: string; alt: string; index: number }) => {
+    // Initialize with placeholder for cache URLs, actual URL for direct URLs
+    const [imageSrc, setImageSrc] = useState<string>(
+      url.startsWith('cache:') 
+        ? '' // Empty string to prevent initial load attempt
+        : url
+    )
+    const [isLoading, setIsLoading] = useState(url.startsWith('cache:'))
+    const [showModal, setShowModal] = useState(false)
+    const [showDownloadButton, setShowDownloadButton] = useState(false)
+    const [isDownloading, setIsDownloading] = useState(false)
+
+    useEffect(() => {
+      if (url.startsWith('cache:')) {
+        const cacheId = url.substring(6) // Remove 'cache:' prefix
+        
+        retrieveImage(cacheId)
+          .then(base64Data => {
+            if (base64Data) {
+              setImageSrc(`data:image/png;base64,${base64Data}`)
+            } else {
+              // Fallback placeholder
+              setImageSrc('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjOTk5Ii8+Cjwvc3ZnPgo=')
+            }
+          })
+          .catch(error => {
+            console.error('Failed to load cached image:', error)
+            setImageSrc('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjOTk5Ii8+Cjwvc3ZnPgo=')
+          })
+          .finally(() => {
+            setIsLoading(false)
+          })
+      }
+    }, [url])
+
+    const handleDownload = async (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (!imageSrc.startsWith('data:')) return
+      
+      setIsDownloading(true)
+      try {
+        const link = document.createElement('a')
+        link.href = imageSrc
+        link.download = `generated-image-${Date.now()}.png`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      } catch (error) {
+        console.error('Failed to download image:', error)
+      } finally {
+        setIsDownloading(false)
+      }
+    }
+
+    const handleEdit = (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (!imageSrc.startsWith('data:') || !chatInputRef?.current) return
+      
+      // Use original cache URL if available, otherwise use the data URL
+      const urlToUse = url.startsWith('cache:') ? url : imageSrc
+      
+      // Add image to chat input for editing
+      chatInputRef.current.addImage(urlToUse, `edited-image-${Date.now()}.png`)
+    }
+
+    // Only show download button when image is fully loaded and not loading
+    const canDownload = !isLoading && imageSrc.startsWith('data:')
+
+    return (
+      <>
+        <div 
+          className="relative group inline-block"
+          style={{ 
+            minWidth: '150px', 
+            minHeight: '100px' 
+          }}
+          onMouseEnter={() => setShowDownloadButton(true)}
+          onMouseLeave={() => setShowDownloadButton(false)}
+        >
+          {isLoading && (
+            <div 
+              className="absolute inset-0 bg-muted animate-pulse rounded-lg flex items-center justify-center"
+              style={{ 
+                minWidth: '150px', 
+                minHeight: '100px' 
+              }}
+            >
+              <div className="text-sm text-muted-foreground">Loading...</div>
+            </div>
+          )}
+          
+          {/* Action buttons - positioned based on minimum area, not actual image size */}
+          {canDownload && (
+            <div 
+              className={`absolute z-10 flex gap-1 transition-opacity duration-200 ${
+                showDownloadButton ? 'opacity-100' : 'opacity-0'
+              }`}
+              style={{
+                top: '8px',
+                right: '8px',
+                // Ensure buttons are always visible even for very small images
+                minWidth: 'fit-content'
+              }}
+            >
+              {/* Edit button */}
+              {chatInputRef && (
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="bg-black/70 hover:bg-black/90 text-white border-none h-8 w-8 shadow-lg"
+                  onClick={handleEdit}
+                  title="Edit image"
+                >
+                  <Edit className="h-3 w-3" />
+                </Button>
+              )}
+              
+              {/* Download button */}
+              <Button
+                variant="secondary"
+                size="icon"
+                className="bg-black/70 hover:bg-black/90 text-white border-none h-8 w-8 shadow-lg"
+                onClick={handleDownload}
+                disabled={isDownloading}
+                title="Download image"
+              >
+                <Download className={`h-3 w-3 ${isDownloading ? 'animate-pulse' : ''}`} />
+              </Button>
+            </div>
+          )}
+          
+          {imageSrc && (
+            <img
+              src={imageSrc}
+              alt={alt}
+              className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+              style={{ 
+                maxHeight: '300px', 
+                minWidth: '150px',
+                minHeight: '100px',
+                maxWidth: '100%',
+                objectFit: 'contain',
+                opacity: isLoading ? 0 : 1 
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!isLoading && imageSrc.startsWith('data:')) {
+                  setShowModal(true)
+                }
+              }}
+            />
+          )}
+        </div>
+
+        {/* Modal for fullscreen view */}
+        <ImageModal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          imageSrc={imageSrc}
+          imageAlt={alt}
+          originalUrl={url}
+          chatInputRef={chatInputRef}
+        />
+      </>
+    )
   }
 
   // Keep local draft in sync
@@ -256,16 +487,11 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
                   {getImageUrls(content).length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-2">
                       {getImageUrls(content).map((url, index) => (
-                        <img
+                        <CachedImage
                           key={index}
-                          src={url}
+                          url={url}
                           alt={`Image ${index + 1}`}
-                          className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                          style={{ maxHeight: '300px' }}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            window.open(url, '_blank')
-                          }}
+                          index={index}
                         />
                       ))}
                     </div>
@@ -292,42 +518,47 @@ export function ChatMessage({ content, isUser, message, isStreaming = false }: C
                           <StreamingCursor />
                         </div>
                       ) : (
-                        // Para mensajes completos, usar ReactMarkdown
+                        // Para mensajes completos, usar ReactMarkdown o mostrar estado de generación de imagen
                         <div className="markdown-content">
-                          <ReactMarkdown
-                            components={{
-                              code: ({ className, children, ...props }) => {
-                                const match = /language-(\w+)/.exec(className || '')
-                                return match ? (
-                                  <CodeBlock className={className}>
-                                    {String(children).replace(/\n$/, '')}
-                                  </CodeBlock>
-                                ) : (
-                                  <code 
-                                    className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-all"
-                                    {...props}
-                                  >
-                                    {children}
-                                  </code>
-                                )
-                              },
-                              pre: ({ children }) => <>{children}</>,
-                              h1: ({ children }) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
-                              h2: ({ children }) => <h2 className="text-lg font-bold mb-2">{children}</h2>,
-                              h3: ({ children }) => <h3 className="text-base font-bold mb-2">{children}</h3>,
-                              ul: ({ children }) => <ul className="list-disc list-inside space-y-1 ml-4">{children}</ul>,
-                              ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 ml-4">{children}</ol>,
-                              li: ({ children }) => <li className="text-base">{children}</li>,
-                              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                              strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-                              em: ({ children }) => <em className="italic">{children}</em>,
-                              blockquote: ({ children }) => (
-                                <blockquote className="border-l-4 border-muted pl-4 italic">{children}</blockquote>
-                              ),
-                            }}
-                          >
-                            {getTextContent(content)}
-                          </ReactMarkdown>
+                          {(getTextContent(content) === 'Starting image generation...' || 
+                            (getTextContent(content) === '' && message?.id.endsWith('_ai_image'))) ? (
+                            <ImageGenerationStatus content={getTextContent(content)} />
+                          ) : (
+                            <ReactMarkdown
+                              components={{
+                                code: ({ className, children, ...props }) => {
+                                  const match = /language-(\w+)/.exec(className || '')
+                                  return match ? (
+                                    <CodeBlock className={className}>
+                                      {String(children).replace(/\n$/, '')}
+                                    </CodeBlock>
+                                  ) : (
+                                    <code 
+                                      className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-all"
+                                      {...props}
+                                    >
+                                      {children}
+                                    </code>
+                                  )
+                                },
+                                pre: ({ children }) => <>{children}</>,
+                                h1: ({ children }) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
+                                h2: ({ children }) => <h2 className="text-lg font-bold mb-2">{children}</h2>,
+                                h3: ({ children }) => <h3 className="text-base font-bold mb-2">{children}</h3>,
+                                ul: ({ children }) => <ul className="list-disc list-inside space-y-1 ml-4">{children}</ul>,
+                                ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 ml-4">{children}</ol>,
+                                li: ({ children }) => <li className="text-base">{children}</li>,
+                                p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                                strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                                em: ({ children }) => <em className="italic">{children}</em>,
+                                blockquote: ({ children }) => (
+                                  <blockquote className="border-l-4 border-muted pl-4 italic">{children}</blockquote>
+                                ),
+                              }}
+                            >
+                              {getTextContent(content)}
+                            </ReactMarkdown>
+                          )}
                         </div>
                       )}
                     </div>

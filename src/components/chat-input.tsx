@@ -10,19 +10,21 @@ import { useVoiceChat } from '@/hooks/use-voice-chat'
 export interface ChatInputRef {
   focus: () => void
   addText: (text: string) => void
+  addImage: (imageUrl: string, filename?: string) => void
 }
 
-export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref) => {
+export const ChatInput = forwardRef<ChatInputRef, object>((_, ref) => {
   ChatInput.displayName = 'ChatInput'
   const [message, setMessage] = useState('')
   const [previousMessage, setPreviousMessage] = useState('')
-  const [images, setImages] = useState<Array<{ url: string; file: File }>>([])
+  const [images, setImages] = useState<Array<{ url: string; file: File; cacheUrl?: string }>>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const connectionRef = useRef<boolean>(false) // Track connection state
   
   const { 
     sendMessage, 
+    sendImageMessage,
     isLoading, 
     isCurrentChatStreaming,
     stopStreaming, 
@@ -30,6 +32,7 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
     voiceMode,
     isRealtimeModel,
     isVisionModel,
+    isImageModel,
     isVoiceSessionEnded,
     setVoiceSessionEnded,
   } = useChatStore()
@@ -49,6 +52,59 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
       setTimeout(() => {
         textareaRef.current?.focus()
       }, 0)
+    },
+    addImage: (imageUrl: string, filename?: string) => {
+      // Check if it's a cache URL (from generated images)
+      if (imageUrl.startsWith('cache:')) {
+        // For cache URLs, we need to resolve the actual image data for preview
+        // but we'll keep the cache reference for sending
+        const cacheId = imageUrl.substring(6) // Remove 'cache:' prefix
+        
+        import('@/lib/image-cache').then(({ retrieveImage }) => {
+          retrieveImage(cacheId)
+            .then(base64Data => {
+              if (base64Data) {
+                const dataUrl = `data:image/png;base64,${base64Data}`
+                const placeholderBlob = new Blob([''], { type: 'image/png' })
+                const file = new File([placeholderBlob], filename || `edited-image-${Date.now()}.png`, { type: 'image/png' })
+                
+                // Store both the display URL (for preview) and cache URL (for sending)
+                const imageData = { 
+                  url: dataUrl, // For preview display
+                  file,
+                  cacheUrl: imageUrl // Keep original cache URL for sending
+                }
+                
+                // Clear existing images and add the resolved image
+                setImages([imageData])
+                
+                // Focus the textarea
+                setTimeout(() => {
+                  textareaRef.current?.focus()
+                }, 0)
+              }
+            })
+            .catch(error => {
+              console.error('Failed to resolve cache image:', error)
+            })
+        })
+      } else {
+        // For data URLs, convert to File object (this is for pasted/uploaded images)
+        fetch(imageUrl)
+          .then(res => res.blob())
+          .then(blob => {
+            const file = new File([blob], filename || `edited-image-${Date.now()}.png`, { type: 'image/png' })
+            // Clear existing images and add the new one
+            setImages([{ url: imageUrl, file }])
+            // Focus the textarea
+            setTimeout(() => {
+              textareaRef.current?.focus()
+            }, 0)
+          })
+          .catch(error => {
+            console.error('Failed to convert image URL to file:', error)
+          })
+      }
     }
   }), [])
 
@@ -100,8 +156,8 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
     const items = e.clipboardData?.items
     if (!items) return
 
-    // Check if the model supports vision
-    if (!isVisionModel() || isRealtimeModel()) return
+    // Check if the model supports vision or image generation
+    if ((!isVisionModel() && !isImageModel()) || isRealtimeModel()) return
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
@@ -131,6 +187,14 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
       setPreviousMessage(messageToSend)
       setMessage('')
       setImages([])
+      
+      // Check if it's an image generation model
+      if (isImageModel() && messageToSend) {
+        // Use image generation for image models
+        await sendImageMessage(messageToSend, imagesToSend)
+        setPreviousMessage('')
+        return
+      }
       
       // Use voice chat for text-to-voice with realtime models
       if (isRealtimeModel() && voiceMode === 'text-to-voice') {
@@ -189,7 +253,9 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
     }
   }
 
-  const isDisabled = !isStreaming && (!message.trim() || isLoading)
+  const isDisabled = !isStreaming && !isLoading && (
+    isImageModel() ? !message.trim() : (!message.trim() && images.length === 0)
+  )
 
   return (
     <motion.div
@@ -233,8 +299,8 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
               className="hidden"
             />
 
-            {/* Image upload button - only show for vision models */}
-            {isVisionModel() && !isRealtimeModel() && (
+            {/* Image upload button - show for vision models or image generation models, but not realtime */}
+            {(isVisionModel() || isImageModel()) && !isRealtimeModel() && (
               <Button
                 type="button"
                 size="icon"
@@ -255,7 +321,13 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
-                placeholder={images.length > 0 ? "Add a message about the image(s)..." : "Type a message..."}
+                placeholder={
+                  isImageModel() 
+                    ? "Describe the image you want to generate..." 
+                    : images.length > 0 
+                      ? "Add a message about the image(s)..." 
+                      : "Type a message..."
+                }
                 className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground placeholder:select-none focus:outline-none"
                 style={{ 
                   minHeight: '24px', 
@@ -305,7 +377,8 @@ export const ChatInput = forwardRef<ChatInputRef, Record<string, never>>((_, ref
             ) : (
               <>
                 Press Enter to send, Shift + Enter for new line
-                {isVisionModel() && !isRealtimeModel() && " • Paste images with Ctrl/Cmd + V"}
+                {(isVisionModel() || isImageModel()) && !isRealtimeModel() && " • Paste images with Ctrl/Cmd + V"}
+                {isImageModel() && " • Upload reference images or describe the image you want to generate"}
               </>
             )}
           </motion.p>
