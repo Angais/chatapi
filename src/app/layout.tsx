@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ChatGPT Clone - Intelligent Chat",
-  description: "A modern and minimalist ChatGPT clone with high-quality interface",
+  title: "ChatAPI",
+  description: "A modern and minimalist chatbot using your own keys",
 };
 
 export default function RootLayout({
