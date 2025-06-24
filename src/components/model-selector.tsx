@@ -296,6 +296,14 @@ export function ModelSelector() {
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
 
+    if (open) {
+      // Las opciones deben animarse al abrir el dropdown
+      setShouldAnimatePresets(true);
+    } else {
+      // Reset animation state when closing
+      setShouldAnimatePresets(true);
+    }
+
     // Quitar focus cuando se cierra el selector
     if (!open) {
       // Usar requestAnimationFrame para asegurar que el DOM se haya actualizado
@@ -374,267 +382,252 @@ export function ModelSelector() {
             </SelectValue>
           </CustomSelectTrigger>
           <SelectPrimitive.Portal>
-            <AnimatePresence>
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{
-                  type: "spring",
-                  damping: 25,
-                  stiffness: 400,
-                  duration: 0.1,
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{
+                type: "spring",
+                damping: 25,
+                stiffness: 400,
+                duration: 0.1,
+              }}
+            >
+              <SelectPrimitive.Content
+                className="relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md w-64 max-h-80"
+                position="popper"
+                sideOffset={4}
+                onCloseAutoFocus={(e) => {
+                  e.preventDefault();
                 }}
               >
-                <SelectPrimitive.Content
-                  className="relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md w-64 max-h-80"
-                  position="popper"
-                  sideOffset={4}
-                  onCloseAutoFocus={(e) => {
-                    e.preventDefault();
-                  }}
-                >
-                  <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
-                    <ChevronDown className="h-4 w-4 rotate-180" />
-                  </SelectPrimitive.ScrollUpButton>
-                  <SelectPrimitive.Viewport className="p-1">
-                    {/* Presets disponibles */}
-                    {availablePresets.map((preset, index) => {
-                      const disabled = isModelDisabled(preset.id);
-                      const tooltipContent = getDisabledTooltip(preset.id);
+                <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
+                  <ChevronDown className="h-4 w-4 rotate-180" />
+                </SelectPrimitive.ScrollUpButton>
+                <SelectPrimitive.Viewport className="p-1">
+                  {/* Presets disponibles */}
+                  {availablePresets.map((preset, index) => {
+                    const disabled = isModelDisabled(preset.id);
+                    const tooltipContent = getDisabledTooltip(preset.id);
 
-                      return (
-                        <motion.div
-                          key={preset.id}
-                          ref={
-                            preset.id === selectedModel ? selectedItemRef : null
-                          }
-                          initial={
-                            shouldAnimatePresets
-                              ? { opacity: 0, x: -10 }
-                              : false
-                          }
-                          animate={
-                            shouldAnimatePresets ? { opacity: 1, x: 0 } : false
-                          }
-                          transition={
-                            shouldAnimatePresets
-                              ? { delay: index * 0.02, duration: 0.15 }
-                              : {}
-                          }
+                    return (
+                      <motion.div
+                        key={preset.id}
+                        ref={
+                          preset.id === selectedModel ? selectedItemRef : null
+                        }
+                        initial={
+                          shouldAnimatePresets ? { opacity: 0, x: -10 } : false
+                        }
+                        animate={
+                          shouldAnimatePresets ? { opacity: 1, x: 0 } : false
+                        }
+                        transition={
+                          shouldAnimatePresets
+                            ? { delay: index * 0.02, duration: 0.15 }
+                            : {}
+                        }
+                      >
+                        <DisableableSelectItem
+                          value={preset.id}
+                          disabled={disabled}
+                          tooltipContent={tooltipContent}
                         >
-                          <DisableableSelectItem
-                            value={preset.id}
-                            disabled={disabled}
-                            tooltipContent={tooltipContent}
+                          <motion.span
+                            className="select-none"
+                            whileHover={!disabled ? { x: 2 } : {}}
+                            transition={{ duration: 0.1 }}
                           >
-                            <motion.span
-                              className="select-none"
-                              whileHover={!disabled ? { x: 2 } : {}}
-                              transition={{ duration: 0.1 }}
-                            >
-                              {preset.displayName}
-                            </motion.span>
-                          </DisableableSelectItem>
-                        </motion.div>
-                      );
-                    })}
+                            {preset.displayName}
+                          </motion.span>
+                        </DisableableSelectItem>
+                      </motion.div>
+                    );
+                  })}
 
-                    {/* Realtime models */}
-                    {REALTIME_MODELS.length > 0 &&
-                      availablePresets.length > 0 && <SelectSeparator />}
+                  {/* Realtime models */}
+                  {REALTIME_MODELS.length > 0 &&
+                    availablePresets.length > 0 && <SelectSeparator />}
 
-                    {REALTIME_MODELS.map((model, index) => {
-                      const disabled = isModelDisabled(model.id);
-                      const tooltipContent = getDisabledTooltip(model.id);
+                  {REALTIME_MODELS.map((model, index) => {
+                    const disabled = isModelDisabled(model.id);
+                    const tooltipContent = getDisabledTooltip(model.id);
 
-                      return (
-                        <motion.div
-                          key={model.id}
-                          ref={
-                            model.id === selectedModel ? selectedItemRef : null
-                          }
-                          initial={
-                            shouldAnimatePresets
-                              ? { opacity: 0, x: -10 }
-                              : false
-                          }
-                          animate={
-                            shouldAnimatePresets ? { opacity: 1, x: 0 } : false
-                          }
-                          transition={
-                            shouldAnimatePresets
-                              ? {
-                                  delay:
-                                    (availablePresets.length + index) * 0.02,
-                                  duration: 0.15,
-                                }
-                              : {}
-                          }
+                    return (
+                      <motion.div
+                        key={model.id}
+                        ref={
+                          model.id === selectedModel ? selectedItemRef : null
+                        }
+                        initial={
+                          shouldAnimatePresets ? { opacity: 0, x: -10 } : false
+                        }
+                        animate={
+                          shouldAnimatePresets ? { opacity: 1, x: 0 } : false
+                        }
+                        transition={
+                          shouldAnimatePresets
+                            ? {
+                                delay: (availablePresets.length + index) * 0.02,
+                                duration: 0.15,
+                              }
+                            : {}
+                        }
+                      >
+                        <DisableableSelectItem
+                          value={model.id}
+                          disabled={disabled}
+                          tooltipContent={tooltipContent}
                         >
-                          <DisableableSelectItem
-                            value={model.id}
-                            disabled={disabled}
-                            tooltipContent={tooltipContent}
+                          <motion.div
+                            className="flex items-center gap-2 select-none"
+                            whileHover={!disabled ? { x: 2 } : {}}
+                            transition={{ duration: 0.1 }}
+                          >
+                            <Mic className="h-3 w-3" />
+                            <span>{model.displayName}</span>
+                          </motion.div>
+                        </DisableableSelectItem>
+                      </motion.div>
+                    );
+                  })}
+
+                  {/* Image generation models */}
+                  {IMAGE_MODELS.length > 0 &&
+                    (availablePresets.length > 0 ||
+                      REALTIME_MODELS.length > 0) && <SelectSeparator />}
+
+                  {IMAGE_MODELS.map((modelId, index) => {
+                    const displayName =
+                      modelId === "gpt-4o-images" ? "GPT-4o (Images)" : modelId;
+                    const disabled = isModelDisabled(modelId);
+                    const tooltipContent = getDisabledTooltip(modelId);
+
+                    return (
+                      <motion.div
+                        key={modelId}
+                        ref={modelId === selectedModel ? selectedItemRef : null}
+                        initial={
+                          shouldAnimatePresets ? { opacity: 0, x: -10 } : false
+                        }
+                        animate={
+                          shouldAnimatePresets ? { opacity: 1, x: 0 } : false
+                        }
+                        transition={
+                          shouldAnimatePresets
+                            ? {
+                                delay:
+                                  (availablePresets.length +
+                                    REALTIME_MODELS.length +
+                                    index) *
+                                  0.02,
+                                duration: 0.15,
+                              }
+                            : {}
+                        }
+                      >
+                        <DisableableSelectItem
+                          value={modelId}
+                          disabled={disabled}
+                          tooltipContent={tooltipContent}
+                        >
+                          <motion.div
+                            className="flex items-center gap-2 select-none"
+                            whileHover={!disabled ? { x: 2 } : {}}
+                            transition={{ duration: 0.1 }}
+                          >
+                            <Image className="h-3 w-3" />
+                            <span>{displayName}</span>
+                          </motion.div>
+                        </DisableableSelectItem>
+                      </motion.div>
+                    );
+                  })}
+
+                  {/* Separador y desplegable de otros modelos */}
+                  {otherModels.length > 0 &&
+                    (availablePresets.length > 0 ||
+                      REALTIME_MODELS.length > 0 ||
+                      IMAGE_MODELS.length > 0) && <SelectSeparator />}
+
+                  {otherModels.length > 0 && (
+                    <>
+                      <div
+                        className="flex items-center gap-2 px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent/50 cursor-pointer rounded-sm transition-colors select-none"
+                        onClick={handleShowAllModelsToggle}
+                      >
+                        <ChevronRight className="h-3 w-3" />
+                        {showAllModels ? "Hide all models" : "Show all models"}
+                      </div>
+
+                      <AnimatePresence>
+                        {showAllModels && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2, ease: "easeInOut" }}
                           >
                             <motion.div
-                              className="flex items-center gap-2 select-none"
-                              whileHover={!disabled ? { x: 2 } : {}}
-                              transition={{ duration: 0.1 }}
+                              className="px-3 py-2 text-xs text-muted-foreground/70 italic border-b border-border/50 mb-1 select-none"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              transition={{ delay: 0.1 }}
                             >
-                              <Mic className="h-3 w-3" />
-                              <span>{model.displayName}</span>
+                              These are all models available from the API. Many
+                              may not work with our interface, but we provide
+                              the freedom to try them.
                             </motion.div>
-                          </DisableableSelectItem>
-                        </motion.div>
-                      );
-                    })}
 
-                    {/* Image generation models */}
-                    {IMAGE_MODELS.length > 0 &&
-                      (availablePresets.length > 0 ||
-                        REALTIME_MODELS.length > 0) && <SelectSeparator />}
+                            {otherModels.map((model, index) => {
+                              const disabled = isModelDisabled(model.id);
+                              const tooltipContent = getDisabledTooltip(
+                                model.id
+                              );
 
-                    {IMAGE_MODELS.map((modelId, index) => {
-                      const displayName =
-                        modelId === "gpt-4o-images"
-                          ? "GPT-4o (Images)"
-                          : modelId;
-                      const disabled = isModelDisabled(modelId);
-                      const tooltipContent = getDisabledTooltip(modelId);
-
-                      return (
-                        <motion.div
-                          key={modelId}
-                          ref={
-                            modelId === selectedModel ? selectedItemRef : null
-                          }
-                          initial={
-                            shouldAnimatePresets
-                              ? { opacity: 0, x: -10 }
-                              : false
-                          }
-                          animate={
-                            shouldAnimatePresets ? { opacity: 1, x: 0 } : false
-                          }
-                          transition={
-                            shouldAnimatePresets
-                              ? {
-                                  delay:
-                                    (availablePresets.length +
-                                      REALTIME_MODELS.length +
-                                      index) *
-                                    0.02,
-                                  duration: 0.15,
-                                }
-                              : {}
-                          }
-                        >
-                          <DisableableSelectItem
-                            value={modelId}
-                            disabled={disabled}
-                            tooltipContent={tooltipContent}
-                          >
-                            <motion.div
-                              className="flex items-center gap-2 select-none"
-                              whileHover={!disabled ? { x: 2 } : {}}
-                              transition={{ duration: 0.1 }}
-                            >
-                              <Image className="h-3 w-3" />
-                              <span>{displayName}</span>
-                            </motion.div>
-                          </DisableableSelectItem>
-                        </motion.div>
-                      );
-                    })}
-
-                    {/* Separador y desplegable de otros modelos */}
-                    {otherModels.length > 0 &&
-                      (availablePresets.length > 0 ||
-                        REALTIME_MODELS.length > 0 ||
-                        IMAGE_MODELS.length > 0) && <SelectSeparator />}
-
-                    {otherModels.length > 0 && (
-                      <>
-                        <div
-                          className="flex items-center gap-2 px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent/50 cursor-pointer rounded-sm transition-colors select-none"
-                          onClick={handleShowAllModelsToggle}
-                        >
-                          <ChevronRight className="h-3 w-3" />
-                          {showAllModels
-                            ? "Hide all models"
-                            : "Show all models"}
-                        </div>
-
-                        <AnimatePresence>
-                          {showAllModels && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: "auto" }}
-                              exit={{ opacity: 0, height: 0 }}
-                              transition={{ duration: 0.2, ease: "easeInOut" }}
-                            >
-                              <motion.div
-                                className="px-3 py-2 text-xs text-muted-foreground/70 italic border-b border-border/50 mb-1 select-none"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                transition={{ delay: 0.1 }}
-                              >
-                                These are all models available from the API.
-                                Many may not work with our interface, but we
-                                provide the freedom to try them.
-                              </motion.div>
-
-                              {otherModels.map((model, index) => {
-                                const disabled = isModelDisabled(model.id);
-                                const tooltipContent = getDisabledTooltip(
-                                  model.id
-                                );
-
-                                return (
-                                  <motion.div
-                                    key={model.id}
-                                    ref={
-                                      model.id === selectedModel
-                                        ? selectedItemRef
-                                        : null
-                                    }
-                                    initial={{ opacity: 0, x: -10 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{
-                                      delay: 0.15 + index * 0.01,
-                                      duration: 0.15,
-                                    }}
+                              return (
+                                <motion.div
+                                  key={model.id}
+                                  ref={
+                                    model.id === selectedModel
+                                      ? selectedItemRef
+                                      : null
+                                  }
+                                  initial={{ opacity: 0, x: -10 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{
+                                    delay: 0.15 + index * 0.01,
+                                    duration: 0.15,
+                                  }}
+                                >
+                                  <DisableableSelectItem
+                                    value={model.id}
+                                    disabled={disabled}
+                                    tooltipContent={tooltipContent}
+                                    className="pl-6"
                                   >
-                                    <DisableableSelectItem
-                                      value={model.id}
-                                      disabled={disabled}
-                                      tooltipContent={tooltipContent}
-                                      className="pl-6"
+                                    <motion.span
+                                      className="select-none"
+                                      whileHover={!disabled ? { x: 2 } : {}}
+                                      transition={{ duration: 0.1 }}
                                     >
-                                      <motion.span
-                                        className="select-none"
-                                        whileHover={!disabled ? { x: 2 } : {}}
-                                        transition={{ duration: 0.1 }}
-                                      >
-                                        {model.name}
-                                      </motion.span>
-                                    </DisableableSelectItem>
-                                  </motion.div>
-                                );
-                              })}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </>
-                    )}
-                  </SelectPrimitive.Viewport>
-                  <SelectPrimitive.ScrollDownButton className="flex cursor-default items-center justify-center py-1">
-                    <ChevronDown className="h-4 w-4" />
-                  </SelectPrimitive.ScrollDownButton>
-                </SelectPrimitive.Content>
-              </motion.div>
-            </AnimatePresence>
+                                      {model.name}
+                                    </motion.span>
+                                  </DisableableSelectItem>
+                                </motion.div>
+                              );
+                            })}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </>
+                  )}
+                </SelectPrimitive.Viewport>
+                <SelectPrimitive.ScrollDownButton className="flex cursor-default items-center justify-center py-1">
+                  <ChevronDown className="h-4 w-4" />
+                </SelectPrimitive.ScrollDownButton>
+              </SelectPrimitive.Content>
+            </motion.div>
           </SelectPrimitive.Portal>
         </Select>
       </div>
