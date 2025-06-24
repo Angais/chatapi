@@ -2537,56 +2537,6 @@ export const useChatStore = create<ChatState>()(
           transcriptionModel: state.transcriptionModel,
           transcriptionLanguage: state.transcriptionLanguage,
         }),
-        version: 6,
-        migrate: (persistedState: any, version: number) => {
-          if (version < 2) {
-            if (persistedState && persistedState.chats) {
-              persistedState.chats = persistedState.chats.map((chat: any) => ({
-                ...chat,
-                model: 'gpt-4o-mini',
-                reasoningEffort: 'no-reasoning',
-              }))
-            }
-            if (persistedState) {
-              persistedState.reasoningEffort = 'no-reasoning'
-            }
-          }
-          if (version < 3) {
-            if (persistedState) {
-              persistedState.devMode = false
-            }
-          }
-          if (version < 4) {
-            if (persistedState) {
-              persistedState.voiceMode = 'none'
-              if (persistedState.chats) {
-                persistedState.chats = persistedState.chats.map((chat: any) => ({
-                  ...chat,
-                  voiceMode: 'none',
-                }))
-              }
-            }
-          }
-          if (version < 5) {
-            if (persistedState) {
-              if (persistedState.chats) {
-                persistedState.chats = persistedState.chats.map((chat: any) => ({
-                  ...chat,
-                  isVoiceSessionEnded: false,
-                }))
-              }
-            }
-          }
-          if (version < 6) {
-            if (persistedState && persistedState.chats) {
-              persistedState.chats = persistedState.chats.map((chat: any) => ({
-                ...chat,
-                totalCost: 0, // Initialize with 0 cost
-              }))
-            }
-          }
-          return persistedState
-        },
       }
     ),
     { name: 'chat-store' }
