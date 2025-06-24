@@ -1,31 +1,32 @@
-'use client'
+"use client";
 
-import { motion } from 'framer-motion'
-import { MessageCircle, Sparkles, Code, Lightbulb } from 'lucide-react'
+import { motion } from "framer-motion";
+import { MessageCircle, Sparkles, Code, Lightbulb } from "lucide-react";
+import Image from "next/image";
 
 export function EmptyState() {
   const suggestions = [
     {
       icon: <Sparkles className="w-5 h-5" />,
       title: "Write something creative",
-      description: "A poem, a story, or anything imaginative"
+      description: "A poem, a story, or anything imaginative",
     },
     {
       icon: <Code className="w-5 h-5" />,
       title: "Help with code",
-      description: "Debugging, explanations, or writing functions"
+      description: "Debugging, explanations, or writing functions",
     },
     {
       icon: <Lightbulb className="w-5 h-5" />,
       title: "Solve problems",
-      description: "Analysis, planning, or brainstorming"
+      description: "Analysis, planning, or brainstorming",
     },
     {
       icon: <MessageCircle className="w-5 h-5" />,
       title: "Ask questions",
-      description: "About any topic that interests you"
-    }
-  ]
+      description: "About any topic that interests you",
+    },
+  ];
 
   return (
     <motion.div
@@ -41,8 +42,14 @@ export function EmptyState() {
         transition={{ delay: 0.2, duration: 0.5 }}
         className="text-center mb-12 select-none"
       >
-        <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mx-auto mb-6">
-          <span className="text-primary-foreground font-bold text-2xl">C</span>
+        <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6 p-2">
+          <Image
+            src="/sunflower-icon.png"
+            alt="ChatAPI Logo"
+            width={48}
+            height={48}
+            className="w-full h-full object-contain"
+          />
         </div>
         <h1 className="text-3xl font-bold mb-2">Hello! I'm ChatAPI</h1>
         <p className="text-muted-foreground text-lg">
@@ -63,9 +70,9 @@ export function EmptyState() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.6 + index * 0.1, duration: 0.3 }}
-            whileHover={{ 
+            whileHover={{
               scale: 1.02,
-              transition: { type: "spring", stiffness: 400, damping: 17 }
+              transition: { type: "spring", stiffness: 400, damping: 17 },
             }}
             whileTap={{ scale: 0.98 }}
             className="p-4 rounded-xl border border-border bg-card hover:bg-accent/50 cursor-pointer transition-colors group select-none"
@@ -97,5 +104,5 @@ export function EmptyState() {
         Click on any of the suggestions or write your own question below
       </motion.p>
     </motion.div>
-  )
-} 
+  );
+}
