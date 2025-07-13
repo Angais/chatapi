@@ -265,6 +265,19 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <p className="text-xs text-muted-foreground">
               Your API key is stored locally and never sent to our servers
             </p>
+            <div className="p-3 bg-white border border-red-300 rounded-md">
+              <p className="text-xs text-red-600 font-medium mb-1">
+                ⚠️ Important Disclaimer
+              </p>
+              <p className="text-xs text-red-500">
+                This application uses OpenAI's API services. You are responsible
+                for all charges, usage limits, and API failures. We are not
+                liable for any costs incurred, service interruptions, or data
+                loss. Please review OpenAI's terms of service and pricing before
+                use. Set a budget in your OpenAI account to avoid unexpected
+                charges.
+              </p>
+            </div>
           </div>
 
           <div className="border-t pt-4" />

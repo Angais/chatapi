@@ -1,57 +1,73 @@
-'use client'
+"use client";
 
-import { motion, AnimatePresence } from 'framer-motion'
-import { MessageSquare, Trash2, Edit2, Check, X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { useChatStore } from '@/stores/chat-store'
-import { useState } from 'react'
-import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
+import { motion, AnimatePresence } from "framer-motion";
+import { MessageSquare, Trash2, Edit2, Check, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useChatStore } from "@/stores/chat-store";
+import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 interface ChatHistoryProps {
-  isOpen: boolean
+  isOpen: boolean;
 }
 
 export function ChatHistory({ isOpen }: ChatHistoryProps) {
-  const { chats, currentChatId, loadChat, deleteChat, updateChatTitle, getStreamingChats, getChatCost, getTotalCost } = useChatStore()
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editingTitle, setEditingTitle] = useState('')
-  const streamingChats = getStreamingChats()
+  const {
+    chats,
+    currentChatId,
+    loadChat,
+    deleteChat,
+    updateChatTitle,
+    getStreamingChats,
+    getChatCost,
+    getTotalCost,
+  } = useChatStore();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const streamingChats = getStreamingChats();
 
-  const totalCost = getTotalCost()
+  const totalCost = getTotalCost();
 
   const handleEdit = (chatId: string, currentTitle: string) => {
-    setEditingId(chatId)
-    setEditingTitle(currentTitle)
-  }
+    setEditingId(chatId);
+    setEditingTitle(currentTitle);
+  };
 
   const handleSaveEdit = (chatId: string) => {
     if (editingTitle.trim()) {
-      updateChatTitle(chatId, editingTitle.trim())
+      updateChatTitle(chatId, editingTitle.trim());
     }
-    setEditingId(null)
-  }
+    setEditingId(null);
+  };
 
   const handleCancelEdit = () => {
-    setEditingId(null)
-    setEditingTitle('')
-  }
+    setEditingId(null);
+    setEditingTitle("");
+  };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
-    
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+
     if (diffInHours < 24) {
-      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      return date.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+      });
     } else if (diffInHours < 48) {
-      return 'Yesterday'
-    } else if (diffInHours < 168) { // 7 days
-      return date.toLocaleDateString('en-US', { weekday: 'long' })
+      return "Yesterday";
+    } else if (diffInHours < 168) {
+      // 7 days
+      return date.toLocaleDateString("en-US", { weekday: "long" });
     } else {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      return date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
     }
-  }
+  };
 
   return (
     <AnimatePresence>
@@ -60,11 +76,11 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
           initial={{ x: -320 }}
           animate={{ x: 0 }}
           exit={{ x: -320 }}
-          transition={{ 
+          transition={{
             duration: 0.25,
-            ease: [0.25, 0.1, 0.25, 1]
+            ease: [0.25, 0.1, 0.25, 1],
           }}
-          className="fixed left-0 top-14 bottom-0 w-80 bg-background border-r border-border z-40 overflow-hidden flex flex-col"
+          className="fixed left-0 top-0 sm:top-14 bottom-0 w-80 bg-background border-r border-border z-50 overflow-hidden flex flex-col shadow-lg"
         >
           {/* Header with total cost */}
           <div className="p-4 border-b border-border">
@@ -72,7 +88,10 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
               <h2 className="font-semibold text-sm">Chat History</h2>
               {totalCost !== 0 && (
                 <div className="text-xs text-muted-foreground font-mono">
-                  Total: {totalCost === -1 ? 'API price unknown' : `$${totalCost.toFixed(4)}`}
+                  Total:{" "}
+                  {totalCost === -1
+                    ? "API price unknown"
+                    : `$${totalCost.toFixed(4)}`}
                 </div>
               )}
             </div>
@@ -87,9 +106,9 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
             ) : (
               <div className="p-2">
                 {chats.map((chat) => {
-                  const isStreaming = streamingChats.includes(chat.id)
-                  const chatCost = getChatCost(chat.id)
-                  
+                  const isStreaming = streamingChats.includes(chat.id);
+                  const chatCost = getChatCost(chat.id);
+
                   return (
                     <motion.div
                       key={chat.id}
@@ -97,7 +116,9 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                       animate={{ opacity: 1, y: 0 }}
                       className={cn(
                         "group relative mb-1 rounded-lg transition-colors",
-                        currentChatId === chat.id ? "bg-accent" : "hover:bg-accent/50"
+                        currentChatId === chat.id
+                          ? "bg-accent"
+                          : "hover:bg-accent/50"
                       )}
                     >
                       {editingId === chat.id ? (
@@ -106,8 +127,8 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                             value={editingTitle}
                             onChange={(e) => setEditingTitle(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleSaveEdit(chat.id)
-                              if (e.key === 'Escape') handleCancelEdit()
+                              if (e.key === "Enter") handleSaveEdit(chat.id);
+                              if (e.key === "Escape") handleCancelEdit();
                             }}
                             className="h-7 text-sm"
                             autoFocus
@@ -141,7 +162,10 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                                 <motion.div
                                   className="absolute -bottom-1 -right-1 w-2 h-2 bg-green-500 rounded-full"
                                   animate={{ opacity: [1, 0.3, 1] }}
-                                  transition={{ duration: 1.5, repeat: Infinity }}
+                                  transition={{
+                                    duration: 1.5,
+                                    repeat: Infinity,
+                                  }}
                                 />
                               )}
                             </div>
@@ -160,7 +184,9 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                                 </p>
                                 {chatCost !== 0 && (
                                   <span className="text-xs text-muted-foreground font-mono">
-                                    {chatCost === -1 ? 'Price unknown' : `$${chatCost.toFixed(4)}`}
+                                    {chatCost === -1
+                                      ? "Price unknown"
+                                      : `$${chatCost.toFixed(4)}`}
                                   </span>
                                 )}
                               </div>
@@ -177,8 +203,8 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                             variant="ghost"
                             className="h-7 w-7 cursor-pointer"
                             onClick={(e) => {
-                              e.stopPropagation()
-                              handleEdit(chat.id, chat.title)
+                              e.stopPropagation();
+                              handleEdit(chat.id, chat.title);
                             }}
                           >
                             <Edit2 className="h-3 w-3" />
@@ -188,8 +214,8 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                             variant="ghost"
                             className="h-7 w-7 hover:text-destructive cursor-pointer"
                             onClick={(e) => {
-                              e.stopPropagation()
-                              deleteChat(chat.id)
+                              e.stopPropagation();
+                              deleteChat(chat.id);
                             }}
                           >
                             <Trash2 className="h-3 w-3" />
@@ -197,7 +223,7 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
                         </div>
                       )}
                     </motion.div>
-                  )
+                  );
                 })}
               </div>
             )}
@@ -205,5 +231,5 @@ export function ChatHistory({ isOpen }: ChatHistoryProps) {
         </motion.aside>
       )}
     </AnimatePresence>
-  )
-} 
+  );
+}

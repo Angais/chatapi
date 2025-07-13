@@ -151,15 +151,24 @@ export default function ChatPage() {
     <div className="flex flex-col h-screen bg-background">
       <Header onToggleSidebar={toggleSidebar} isSidebarOpen={isSidebarOpen} />
 
-      <div className="flex flex-1 relative pt-14">
-        {/* Sidebar */}
+      <div className="flex flex-1 relative pt-14 sm:pt-14 pt-20">
+        {/* Sidebar - overlay en móvil, normal en desktop */}
         <ChatHistory isOpen={isSidebarOpen} />
+
+        {/* Backdrop para móvil */}
+        {isSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 z-40 sm:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
 
         {/* Main content */}
         <main
           className={cn(
             "flex-1 flex flex-col transition-all ease-out",
-            isSidebarOpen ? "ml-80 duration-100" : "ml-0 duration-0"
+            // En desktop empuja el contenido, en móvil no
+            isSidebarOpen ? "sm:ml-80 duration-100" : "ml-0 duration-0"
           )}
         >
           {messages.length === 0 && !error && !isStreaming ? (

@@ -21,6 +21,9 @@
   --radius: 0.5rem;
   --logo-bg: 255 248 197;
   --logo-icon: 221 176 87;
+  --disclaimer-bg: 133 77 14;
+  --disclaimer-border: 146 64 14;
+  --disclaimer-text: 254 240 138;
 }
 
 .dark {
@@ -43,6 +46,9 @@
   --ring: 200 200 200;
   --logo-bg: 52 47 25;
   --logo-icon: 221 176 87;
+  --disclaimer-bg: 69 26 3;
+  --disclaimer-border: 133 77 14;
+  --disclaimer-text: 253 230 138;
 }
 
 @theme inline {
@@ -151,6 +157,19 @@ body {
 /* Logo icon color */
 .logo-icon {
   color: rgb(var(--logo-icon));
+}
+
+/* Disclaimer styles */
+.disclaimer-bg {
+  background-color: rgb(var(--disclaimer-bg));
+}
+
+.disclaimer-border {
+  border-color: rgb(var(--disclaimer-border));
+}
+
+.disclaimer-text {
+  color: rgb(var(--disclaimer-text));
 }
 
 /* Animaciones suaves para elementos interactivos */
