@@ -20,7 +20,7 @@ export const createIndexedDBPersist = <T>(
       get(options.name)
         .then((persistedState) => {
           if (persistedState) {
-            console.log(`📦 [INDEXEDDB] Loaded state from ${options.name}`)
+            console.log(`📦 [INDEXEDDB] Loaded state from ${options.name} with ${persistedState.chats?.length || 0} chats`)
             setState(persistedState)
             if (options.onRehydrateStorage) {
               options.onRehydrateStorage(getState())
@@ -51,7 +51,7 @@ export const createIndexedDBPersist = <T>(
           
           set(options.name, stateToSave)
             .then(() => {
-              // console.log(`📦 [INDEXEDDB] Saved state to ${options.name}`) // Commented to reduce noise
+              console.log(`📦 [INDEXEDDB] Saved state to ${options.name} with ${stateToSave.chats?.length || 0} chats`)
             })
             .catch((error) => {
               console.error(`📦 [INDEXEDDB] Failed to save state to ${options.name}:`, error)

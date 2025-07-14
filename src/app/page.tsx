@@ -18,7 +18,7 @@ import { ChatCostDisplay } from "@/components/chat-cost-display";
 export default function ChatPage() {
   const {
     messages,
-    isLoading,
+    isCurrentChatLoading,
     isCurrentChatStreaming,
     getCurrentStreamingMessage,
     error,
@@ -34,6 +34,7 @@ export default function ChatPage() {
   const [dynamicPadding, setDynamicPadding] = useState(0);
   const prevMessagesLengthRef = useRef(messages.length);
 
+  const isLoading = isCurrentChatLoading();
   const isStreaming = isCurrentChatStreaming();
   const streamingMessage = getCurrentStreamingMessage();
 

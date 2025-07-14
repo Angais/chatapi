@@ -181,6 +181,7 @@ export interface Chat {
 
 // Add new interface for streaming sessions
 interface StreamingSession {
+  isLoading: boolean
   isStreaming: boolean
   streamingMessage: string
   abortController: AbortController | null
@@ -233,7 +234,7 @@ interface ChatState {
   // Current chat state
   currentChatId: string | null
   messages: Message[]
-  isLoading: boolean
+  isLoading: boolean // DEPRECATED - will be computed from streamingSessions
   isStreaming: boolean // DEPRECATED - will be computed from streamingSessions
   streamingMessage: string // DEPRECATED - will be computed from streamingSessions
   abortController: AbortController | null // DEPRECATED - moved to streamingSessions
@@ -284,6 +285,7 @@ interface ChatState {
   init: () => void
   addMessage: (content: string | MessageContent[], isUser: boolean, debugInfo?: any) => void
   updateMessage: (messageId: string, newContent: string) => void
+  regenerateFromMessage: (messageId: string) => Promise<void>
   setLoading: (loading: boolean) => void
   setStreaming: (streaming: boolean) => void
   setStreamingMessage: (message: string) => void
@@ -332,6 +334,7 @@ interface ChatState {
   
   // NEW: Computed getters for current chat streaming
   getCurrentChatStreaming: () => StreamingSession | null
+  isCurrentChatLoading: () => boolean
   isCurrentChatStreaming: () => boolean
   getCurrentStreamingMessage: () => string
   
@@ -384,8 +387,7 @@ const debounce = <T extends (...args: any[]) => any>(
 
 export const useChatStore = create<ChatState>()(
   devtools(
-    createIndexedDBPersist(
-      (set, get) => {
+    (set, get) => {
         // Create a debounced function to update chat history
         const debouncedUpdateChatHistory = debounce((chatId: string, messages: Message[]) => {
           set((state) => ({
@@ -397,9 +399,60 @@ export const useChatStore = create<ChatState>()(
           }))
         }, 500) // 500ms delay
 
+        // SIMPLE LOCALSTORAGE PERSISTENCE - Load on init
+        const loadFromLocalStorage = () => {
+          if (typeof window !== 'undefined') {
+            try {
+              const saved = localStorage.getItem('chat-store');
+              if (saved) {
+                const data = JSON.parse(saved);
+                console.log(`💾 [LOCALSTORAGE] Loaded ${data.chats?.length || 0} chats`);
+                return data;
+              }
+            } catch (error) {
+              console.error('💾 [LOCALSTORAGE] Load failed:', error);
+            }
+          }
+          return null;
+        };
+
+        const saveToLocalStorage = (state: any) => {
+          if (typeof window !== 'undefined') {
+            const dataToSave = {
+              chats: state.chats,
+              currentChatId: state.currentChatId,
+              reasoningEffort: state.reasoningEffort,
+              voiceMode: state.voiceMode,
+              devMode: state.devMode,
+              temperature: state.temperature,
+              maxTokens: state.maxTokens,
+              voice: state.voice,
+              systemInstructions: state.systemInstructions,
+              vadType: state.vadType,
+              vadThreshold: state.vadThreshold,
+              vadPrefixPadding: state.vadPrefixPadding,
+              vadSilenceDuration: state.vadSilenceDuration,
+              vadEagerness: state.vadEagerness,
+              transcriptionModel: state.transcriptionModel,
+              transcriptionLanguage: state.transcriptionLanguage,
+              imageQuality: state.imageQuality,
+              imageStreaming: state.imageStreaming,
+              imageAspectRatio: state.imageAspectRatio,
+            };
+            try {
+              localStorage.setItem('chat-store', JSON.stringify(dataToSave));
+              console.log(`💾 [LOCALSTORAGE] Saved ${dataToSave.chats.length} chats`);
+            } catch (error) {
+              console.error('💾 [LOCALSTORAGE] Save failed:', error);
+            }
+          }
+        };
+
+        const savedData = loadFromLocalStorage();
+
         return {
-          // Initial state
-          currentChatId: null,
+          // Initial state (with saved data if available)
+          currentChatId: savedData?.currentChatId || null,
           messages: [],
           isLoading: false,
           isStreaming: false,
@@ -407,37 +460,37 @@ export const useChatStore = create<ChatState>()(
           abortController: null,
           error: null,
           selectedModel: 'gpt-4o',
-          reasoningEffort: 'medium',
-          voiceMode: 'none',
+          reasoningEffort: savedData?.reasoningEffort || 'medium',
+          voiceMode: savedData?.voiceMode || 'none',
           isVoiceSessionEnded: false,
           
-          // NEW: Default image generation settings
-          imageQuality: 'medium',
-          imageStreaming: 'enabled',
-          imageAspectRatio: 'square',
+          // Image generation settings
+          imageQuality: savedData?.imageQuality || 'medium',
+          imageStreaming: savedData?.imageStreaming || 'enabled',
+          imageAspectRatio: savedData?.imageAspectRatio || 'square',
           
-          // NEW: Initialize streaming sessions
+          // Streaming sessions
           streamingSessions: new Map(),
           
-                  chats: [],
-        models: [],
-        isLoadingModels: false,
-        modelsError: null,
-        devMode: false,
+          chats: savedData?.chats || [],
+          models: [],
+          isLoadingModels: false,
+          modelsError: null,
+          devMode: savedData?.devMode || false,
           unsupportedModelError: null,
           
           // Settings
-          temperature: 0.7,
-          maxTokens: 1000,
-          voice: 'alloy',
-          systemInstructions: '',
-          vadType: 'server_vad',
-          vadThreshold: 0.5,
-          vadPrefixPadding: 300,
-          vadSilenceDuration: 500,
-          vadEagerness: 'medium',
-          transcriptionModel: 'gpt-4o-transcribe',
-          transcriptionLanguage: 'en',
+          temperature: savedData?.temperature || 0.7,
+          maxTokens: savedData?.maxTokens || 1000,
+          voice: savedData?.voice || 'alloy',
+          systemInstructions: savedData?.systemInstructions || '',
+          vadType: savedData?.vadType || 'server_vad',
+          vadThreshold: savedData?.vadThreshold || 0.5,
+          vadPrefixPadding: savedData?.vadPrefixPadding || 300,
+          vadSilenceDuration: savedData?.vadSilenceDuration || 500,
+          vadEagerness: savedData?.vadEagerness || 'medium',
+          transcriptionModel: savedData?.transcriptionModel || 'gpt-4o-transcribe',
+          transcriptionLanguage: savedData?.transcriptionLanguage || 'en',
 
           init: () => {
             const state = get()
@@ -554,26 +607,76 @@ export const useChatStore = create<ChatState>()(
               // Only update messages array immediately
               return { messages: updatedMessages }
             })
+            // Auto-save
+            setTimeout(() => {
+              const state = get()
+              saveToLocalStorage(state)
+            }, 100)
           },
 
           updateMessage: (messageId: string, newContent: string) => {
             const { currentChatId } = get()
             if (!currentChatId) return
 
+            let shouldRegenerateResponse = false
+            let messageIndex = -1
+
             set((state) => {
+              // Helper function to update message content while preserving images
+              const updateMessageContent = (message: Message): Message => {
+                if (message.id !== messageId) return message
+                
+                // If the current content is an array (has images), preserve them
+                if (Array.isArray(message.content)) {
+                  const imageContents = message.content.filter(c => c.type === 'image_url')
+                  const newContentArray: MessageContent[] = []
+                  
+                  // Add the new text content first
+                  if (newContent.trim()) {
+                    newContentArray.push({ type: 'text', text: newContent })
+                  }
+                  
+                  // Add back all the images
+                  newContentArray.push(...imageContents)
+                  
+                  return { ...message, content: newContentArray }
+                } else {
+                  // If it's a string, just update it normally
+                  return { ...message, content: newContent }
+                }
+              }
+
+              // Find the message being edited and check if we need to regenerate
+              messageIndex = state.messages.findIndex(m => m.id === messageId)
+              if (messageIndex !== -1) {
+                const editedMessage = state.messages[messageIndex]
+                // Only regenerate if it's a user message and there are AI messages after it
+                if (editedMessage.isUser && messageIndex < state.messages.length - 1) {
+                  // Check if there are any AI messages after this user message
+                  const hasAIResponseAfter = state.messages.slice(messageIndex + 1).some(m => !m.isUser)
+                  shouldRegenerateResponse = hasAIResponseAfter
+                }
+              }
+
               // Update messages currently in view
-              const updatedMessages = state.messages.map(m =>
-                m.id === messageId ? { ...m, content: newContent } : m
-              )
+              let updatedMessages = state.messages.map(updateMessageContent)
+
+              // If we need to regenerate, remove all messages after the edited user message
+              if (shouldRegenerateResponse && messageIndex !== -1) {
+                updatedMessages = updatedMessages.slice(0, messageIndex + 1)
+              }
 
               // Update the chat stored in history
               const updatedChats = state.chats.map(chat => {
                 if (chat.id !== currentChatId) return chat
 
                 // Refresh messages inside that chat
-                const updatedChatMessages = chat.messages.map(m =>
-                  m.id === messageId ? { ...m, content: newContent } : m
-                )
+                let updatedChatMessages = chat.messages.map(updateMessageContent)
+                
+                // If we need to regenerate, remove messages after the edited one
+                if (shouldRegenerateResponse && messageIndex !== -1) {
+                  updatedChatMessages = updatedChatMessages.slice(0, messageIndex + 1)
+                }
 
                 // If the first message changed, refresh the title
                 const newTitle =
@@ -592,9 +695,259 @@ export const useChatStore = create<ChatState>()(
 
               return { messages: updatedMessages, chats: updatedChats }
             })
+
+            // If we need to regenerate the response, do it after the state update
+            if (shouldRegenerateResponse) {
+              // Use a timeout to ensure the state update completes first
+              setTimeout(async () => {
+                await get().regenerateFromMessage(messageId)
+              }, 0)
+            }
           },
 
-          setLoading: (loading: boolean) => set({ isLoading: loading }),
+          regenerateFromMessage: async (messageId: string) => {
+            const { currentChatId } = get()
+            if (!currentChatId) return
+
+            const apiKey = localStorage.getItem('openai_api_key')
+            let model = get().selectedModel
+            const reasoningEffort = get().reasoningEffort
+            const devMode = get().devMode
+            const systemInstructions = get().systemInstructions
+            
+            if (!apiKey) {
+              set({ error: 'Please set your OpenAI API key in settings' })
+              return
+            }
+
+            // If the current model is a realtime model, fall back to a default chat model
+            if (get().isRealtimeModel(model)) {
+              model = 'gpt-4o-mini'
+            }
+
+            // Clear previous errors
+            set({ error: null, unsupportedModelError: null })
+
+            try {
+              // Get messages up to the edited message
+              const currentMessages = get().messages
+              const messagesToSend = []
+              
+              // Add system instructions
+              const instructions = systemInstructions.trim() || 'You are a helpful assistant.'
+              messagesToSend.push({
+                role: 'system',
+                content: instructions
+              })
+              
+              // Add existing messages up to and including the edited message
+              messagesToSend.push(
+                ...currentMessages.map(msg => ({
+                  role: msg.isUser ? 'user' : 'assistant',
+                  content: msg.content,
+                }))
+              )
+
+              // Start the regeneration process
+              const startTime = Date.now()
+              const chatId = currentChatId
+
+              // Add placeholder AI message
+              get().addMessage('', false)
+              get().updateStreamingSession(chatId, { isLoading: true })
+
+              // Initialize streaming session
+              const controller = new AbortController()
+              get().updateStreamingSession(chatId, {
+                isStreaming: true,
+                streamingMessage: '',
+                abortController: controller
+              })
+
+              // Make API call
+              const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  messages: messagesToSend,
+                  apiKey,
+                  model,
+                  reasoningEffort,
+                  stream: true,
+                  temperature: get().temperature,
+                  maxTokens: get().maxTokens,
+                }),
+                signal: controller.signal,
+              })
+
+              if (!response.ok) {
+                const errorData = await response.json()
+                if (errorData.unsupportedModel) {
+                  // Remove the placeholder message
+                  set(state => {
+                    const updatedMessages = state.messages.slice(0, -1)
+                    const updatedChats = state.chats.map(chat =>
+                      chat.id === chatId
+                        ? { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+                        : chat
+                    )
+                    
+                    return {
+                      messages: state.currentChatId === chatId ? updatedMessages : state.messages,
+                      chats: updatedChats,
+                      unsupportedModelError: errorData.error,
+                    }
+                  })
+                  get().cleanupStreamingSession(chatId)
+                  return
+                }
+                throw new Error(errorData.error || 'Failed to regenerate response')
+              }
+
+              // Handle streaming response (similar to sendMessage)
+              if (response.body) {
+                get().updateStreamingSession(chatId, { isStreaming: true, isLoading: false })
+                
+                const reader = response.body.getReader()
+                const decoder = new TextDecoder()
+                let fullResponse = ''
+                let usage = null
+                const responseTime = Date.now() - startTime
+
+                try {
+                  while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) break
+
+                    const chunk = decoder.decode(value)
+                    const lines = chunk.split('\n')
+
+                    for (const line of lines) {
+                      if (line.startsWith('data: ')) {
+                        const data = line.slice(6).trim()
+                        if (data === '[DONE]') continue
+
+                        try {
+                          const parsed = JSON.parse(data)
+                          if (parsed.error) {
+                            throw new Error(parsed.error)
+                          }
+
+                          if (parsed.choices?.[0]?.delta?.content) {
+                            const content = parsed.choices[0].delta.content
+                            fullResponse += content
+                            get().updateStreamingSession(chatId, { 
+                              streamingMessage: fullResponse 
+                            })
+                          }
+
+                          if (parsed.usage) {
+                            usage = parsed.usage
+                          }
+                        } catch (parseError) {
+                          console.error('Failed to parse streaming data:', parseError)
+                        }
+                      }
+                    }
+                  }
+                } catch (error: any) {
+                  console.error('Streaming error:', error)
+                  if (!controller.signal.aborted) {
+                    throw error
+                  }
+                } finally {
+                  reader.releaseLock()
+                }
+
+                // Finalize the message
+                if (!controller.signal.aborted && fullResponse) {
+                  // Update both current messages and chat history
+                  set((state) => {
+                    // Find the last AI message (placeholder) and update it
+                    const updatedMessages = [...state.messages]
+                    for (let i = updatedMessages.length - 1; i >= 0; i--) {
+                      if (!updatedMessages[i].isUser) {
+                        updatedMessages[i] = {
+                          ...updatedMessages[i],
+                          content: fullResponse,
+                          debugInfo: devMode ? {
+                            receivedFromAPI: {
+                              model,
+                              response: fullResponse,
+                              usage,
+                              timestamp: new Date().toISOString(),
+                              responseTime,
+                            }
+                          } : undefined,
+                        }
+                        break
+                      }
+                    }
+
+                    // Update chat history as well
+                    const updatedChats = state.chats.map(c => {
+                      if (c.id === chatId) {
+                        const updatedChatMessages = [...c.messages]
+                        for (let i = updatedChatMessages.length - 1; i >= 0; i--) {
+                          if (!updatedChatMessages[i].isUser) {
+                            updatedChatMessages[i] = {
+                              ...updatedChatMessages[i],
+                              content: fullResponse,
+                              debugInfo: devMode ? {
+                                receivedFromAPI: {
+                                  model,
+                                  response: fullResponse,
+                                  usage,
+                                  timestamp: new Date().toISOString(),
+                                  responseTime,
+                                }
+                              } : undefined,
+                            }
+                            break
+                          }
+                        }
+                        return {
+                          ...c,
+                          messages: updatedChatMessages,
+                          updatedAt: new Date().toISOString()
+                        }
+                      }
+                      return c
+                    })
+
+                    return { 
+                      messages: state.currentChatId === chatId ? updatedMessages : state.messages, 
+                      chats: updatedChats 
+                    }
+                  })
+                }
+
+                get().cleanupStreamingSession(chatId)
+                // Auto-save after regeneration
+                setTimeout(() => {
+                  const state = get()
+                  saveToLocalStorage(state)
+                }, 100)
+              }
+            } catch (error: any) {
+              console.error('Regeneration error:', error)
+              set({ error: error.message || 'Failed to regenerate response' })
+              get().cleanupStreamingSession(currentChatId)
+              // Auto-save after error
+              setTimeout(() => {
+                const state = get()
+                saveToLocalStorage(state)
+              }, 100)
+            }
+          },
+
+          setLoading: (loading: boolean) => {
+            // Update for backward compatibility
+            const { currentChatId } = get()
+            if (currentChatId) {
+              get().updateStreamingSession(currentChatId, { isLoading: loading })
+            }
+          },
           setStreaming: (streaming: boolean) => {
             // Update for backward compatibility
             const { currentChatId } = get()
@@ -714,6 +1067,11 @@ export const useChatStore = create<ChatState>()(
               reasoningEffort: defaultReasoningEffort,
               voiceMode: shouldKeepVoice ? 'text-to-voice' : 'none',
               isVoiceSessionEnded: false,
+              // Clear deprecated global streaming state
+              isLoading: false,
+              isStreaming: false,
+              streamingMessage: '',
+              abortController: null,
             })
           },
 
@@ -736,6 +1094,7 @@ export const useChatStore = create<ChatState>()(
                 voiceMode: chatToLoad.voiceMode || 'none',
                 isVoiceSessionEnded: chatToLoad.isVoiceSessionEnded || false,
                 // Update deprecated global streaming state
+                isLoading: streamingSession?.isLoading || false,
                 isStreaming: streamingSession?.isStreaming || false,
                 streamingMessage: streamingSession?.streamingMessage || '',
                 abortController: streamingSession?.abortController || null,
@@ -771,6 +1130,12 @@ export const useChatStore = create<ChatState>()(
               
               return { chats: updatedChats }
             })
+            
+            // Auto-save after deletion
+            setTimeout(() => {
+              const state = get()
+              saveToLocalStorage(state)
+            }, 100)
           },
 
           updateChatTitle: (chatId: string, title: string) => {
@@ -811,6 +1176,7 @@ export const useChatStore = create<ChatState>()(
           },
 
           sendMessage: async (content: string, images?: Array<{ url: string; file: File }>) => {
+            console.log('🚀 [SENDMESSAGE] Starting sendMessage with content:', content)
             const apiKey = localStorage.getItem('openai_api_key')
             let model = get().selectedModel
             const reasoningEffort = get().reasoningEffort
@@ -930,9 +1296,11 @@ export const useChatStore = create<ChatState>()(
               return {
                 messages: updatedMessages,
                 chats: updatedChats,
-                isLoading: true
               }
             })
+            
+            // Set loading state for this chat
+            get().updateStreamingSession(chatId, { isLoading: true })
 
             const startTime = Date.now()
 
@@ -973,7 +1341,6 @@ export const useChatStore = create<ChatState>()(
                       messages: state.currentChatId === chatId ? updatedMessages : state.messages,
                       chats: updatedChats,
                       unsupportedModelError: errorData.error,
-                      isLoading: false
                     }
                   })
                   get().cleanupStreamingSession(chatId)
@@ -984,8 +1351,7 @@ export const useChatStore = create<ChatState>()(
 
               // Handle streaming response
               if (response.body) {
-                get().updateStreamingSession(chatId, { isStreaming: true })
-                set({ isLoading: false })
+                get().updateStreamingSession(chatId, { isStreaming: true, isLoading: false })
                 
                 const reader = response.body.getReader()
                 const decoder = new TextDecoder()
@@ -1102,13 +1468,31 @@ export const useChatStore = create<ChatState>()(
                 const messageCost = usage ? get().calculateMessageCost(usage, model) : 0
 
                 // Finalize the message
+                console.log('🔄 [FINALIZE] Starting message finalization for chatId:', chatId)
+                console.log('🔄 [FINALIZE] Full response length:', fullResponse.length)
                 set(state => {
+                  console.log('🔄 [FINALIZE] Current messages count:', state.messages.length)
+                  
+                  // Find the placeholder message to preserve its ID and timestamp
+                  let placeholderMessage = null
+                  for (let i = state.messages.length - 1; i >= 0; i--) {
+                    if (!state.messages[i].isUser && state.messages[i].id.endsWith('_ai')) {
+                      placeholderMessage = state.messages[i]
+                      console.log('🔄 [FINALIZE] Found placeholder message with ID:', placeholderMessage.id)
+                      break
+                    }
+                  }
+                  
+                  if (!placeholderMessage) {
+                    console.warn('🔄 [FINALIZE] No placeholder message found!')
+                  }
+                  
                   // Update the placeholder message with final content and debug info
                   const finalMessage = {
-                    id: Date.now().toString(),
+                    id: placeholderMessage?.id || Date.now().toString(),
                     content: fullResponse,
                     isUser: false,
-                    timestamp: new Date().toLocaleTimeString('en-US', {
+                    timestamp: placeholderMessage?.timestamp || new Date().toLocaleTimeString('en-US', {
                       hour: 'numeric',
                       minute: '2-digit',
                       hour12: true,
@@ -1116,14 +1500,21 @@ export const useChatStore = create<ChatState>()(
                     debugInfo: assistantDebugInfo,
                   }
                   
+                  console.log('🔄 [FINALIZE] Created final message with ID:', finalMessage.id)
+                  
                   // Update chats array and calculate new total cost
                   const updatedChats = state.chats.map(chat => {
                     if (chat.id === chatId) {
-                      const updatedMessages = chat.messages.map((msg, idx) => 
-                        idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai')
-                          ? finalMessage
-                          : msg
-                      )
+                      console.log('🔄 [FINALIZE] Updating chat:', chat.id, 'with', chat.messages.length, 'messages')
+                      const updatedMessages = chat.messages.map((msg, idx) => {
+                        const shouldReplace = idx === chat.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai')
+                        if (shouldReplace) {
+                          console.log('🔄 [FINALIZE] Replacing message at index', idx, 'with ID:', msg.id, '-> ID:', finalMessage.id)
+                        }
+                        return shouldReplace ? finalMessage : msg
+                      })
+                      
+                      console.log('🔄 [FINALIZE] Chat updated, new message count:', updatedMessages.length)
                       
                       // Calculate new total cost for this chat
                       const newTotalCost = get().getChatCost(chat.id) + messageCost
@@ -1140,11 +1531,15 @@ export const useChatStore = create<ChatState>()(
                   
                   // If this is the current chat, also update the current messages
                   if (state.currentChatId === chatId) {
-                    const updatedMessages = state.messages.map((msg, idx) => 
-                      idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai')
-                        ? finalMessage
-                        : msg
-                    )
+                    console.log('🔄 [FINALIZE] Updating current messages for chat:', chatId)
+                    const updatedMessages = state.messages.map((msg, idx) => {
+                      const shouldReplace = idx === state.messages.length - 1 && !msg.isUser && msg.id.endsWith('_ai')
+                      if (shouldReplace) {
+                        console.log('🔄 [FINALIZE] Replacing current message at index', idx, 'with ID:', msg.id, '-> ID:', finalMessage.id)
+                      }
+                      return shouldReplace ? finalMessage : msg
+                    })
+                    console.log('🔄 [FINALIZE] Current messages updated, new count:', updatedMessages.length)
                     return { messages: updatedMessages, chats: updatedChats }
                   }
                   
@@ -1153,6 +1548,16 @@ export const useChatStore = create<ChatState>()(
                 
                 // Clean up streaming session
                 get().cleanupStreamingSession(chatId)
+                // Auto-save after AI response
+                setTimeout(() => {
+                  const state = get()
+                  console.log('🔄 [FINALIZE] Auto-saving state with', state.chats.length, 'chats')
+                  const targetChat = state.chats.find(c => c.id === chatId)
+                  if (targetChat) {
+                    console.log('🔄 [FINALIZE] Target chat has', targetChat.messages.length, 'messages')
+                  }
+                  saveToLocalStorage(state)
+                }, 100)
               }
             } catch (error: any) {
               console.error('Chat error:', error)
@@ -1166,10 +1571,8 @@ export const useChatStore = create<ChatState>()(
                 get().cleanupStreamingSession(chatId)
               }
             } finally {
-              // Only clear loading if we're still on the same chat
-              if (get().currentChatId === chatId) {
-                set({ isLoading: false })
-              }
+              // Clear loading state for this specific chat
+              get().updateStreamingSession(chatId, { isLoading: false })
             }
           },
 
@@ -1524,7 +1927,6 @@ export const useChatStore = create<ChatState>()(
                       messages: state.currentChatId === chatId ? updatedMessages : state.messages,
                       chats: updatedChats,
                       unsupportedModelError: errorData.error,
-                      isLoading: false
                     }
                   })
                   // Always cleanup streaming session on error for both modes
@@ -1975,6 +2377,11 @@ export const useChatStore = create<ChatState>()(
                 
                 // Clean up streaming session
                 get().cleanupStreamingSession(chatId)
+                // Auto-save after AI response
+                setTimeout(() => {
+                  const state = get()
+                  saveToLocalStorage(state)
+                }, 100)
                 
               } else {
                 // Non-streaming response (Final only mode)
@@ -2291,6 +2698,11 @@ export const useChatStore = create<ChatState>()(
             return streamingSessions.get(currentChatId) || null
           },
 
+          isCurrentChatLoading: () => {
+            const session = get().getCurrentChatStreaming()
+            return session?.isLoading || false
+          },
+
           isCurrentChatStreaming: () => {
             const session = get().getCurrentChatStreaming()
             return session?.isStreaming || false
@@ -2314,6 +2726,7 @@ export const useChatStore = create<ChatState>()(
             set((state) => {
               const sessions = new Map(state.streamingSessions)
               sessions.set(chatId, {
+                isLoading: false,
                 isStreaming: false,
                 streamingMessage: '',
                 abortController: null,
@@ -2326,6 +2739,7 @@ export const useChatStore = create<ChatState>()(
             set((state) => {
               const sessions = new Map(state.streamingSessions)
               const current = sessions.get(chatId) || {
+                isLoading: false,
                 isStreaming: false,
                 streamingMessage: '',
                 abortController: null,
@@ -2335,6 +2749,7 @@ export const useChatStore = create<ChatState>()(
               // Update deprecated global state if this is the current chat
               const updateState: any = { streamingSessions: sessions }
               if (state.currentChatId === chatId) {
+                if ('isLoading' in updates) updateState.isLoading = updates.isLoading
                 if ('isStreaming' in updates) updateState.isStreaming = updates.isStreaming
                 if ('streamingMessage' in updates) updateState.streamingMessage = updates.streamingMessage
                 if ('abortController' in updates) updateState.abortController = updates.abortController
@@ -2352,6 +2767,7 @@ export const useChatStore = create<ChatState>()(
               // Clear deprecated global state if this was the current chat
               const updateState: any = { streamingSessions: sessions }
               if (state.currentChatId === chatId) {
+                updateState.isLoading = false
                 updateState.isStreaming = false
                 updateState.streamingMessage = ''
                 updateState.abortController = null
@@ -2517,28 +2933,6 @@ export const useChatStore = create<ChatState>()(
           },
         }
       },
-      {
-        name: 'chat-storage-idb',
-        partialize: (state) => ({
-          chats: state.chats,
-          currentChatId: state.currentChatId,
-          reasoningEffort: state.reasoningEffort,
-          voiceMode: state.voiceMode,
-          devMode: state.devMode,
-          temperature: state.temperature,
-          maxTokens: state.maxTokens,
-          voice: state.voice,
-          systemInstructions: state.systemInstructions,
-          vadType: state.vadType,
-          vadThreshold: state.vadThreshold,
-          vadPrefixPadding: state.vadPrefixPadding,
-          vadSilenceDuration: state.vadSilenceDuration,
-          vadEagerness: state.vadEagerness,
-          transcriptionModel: state.transcriptionModel,
-          transcriptionLanguage: state.transcriptionLanguage,
-        }),
-      }
-    ),
-    { name: 'chat-store' }
-  )
+      { name: 'chat-store' }
+    )
 )
